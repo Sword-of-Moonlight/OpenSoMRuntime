@@ -1,0 +1,73 @@
+using System.IO;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+public class ModelFactory : ResourceFactory<ModelResource>
+{
+    /// <inheritdoc/>
+    public ModelFactory() : base()
+    {
+        RegisterFormatHandler(new MDOFormatHandler());
+        RegisterFormatHandler(new MDLFormatHandler());
+    }
+
+    public override ulong Load(string path, ResourceParameters parameters = null)
+    {
+        // Calculate our hash name
+        ulong name = HashThis.StringTo64(path);
+
+        // Does this resource already exist in the cache? If so, return it without doing anything else.
+        if (resourceCache.ContainsKey(name))
+            return name;
+
+        // Lets create our absolute path now
+        string absolutePath = Path.Combine(ResourceManager.ResourceRoot, path);
+
+        if (!File.Exists(absolutePath))
+            throw new Exception($"Failed to import '{path}' located '{absolutePath}'!\nFile does not exist");
+
+        // Try to find a loader for this resource
+        FormatHandler<ModelResource> handler = GetFormatHandler(Path.GetExtension(path)) ?? throw new Exception($"Couldn't find format handler for '{path}'!");
+
+        // Create the stream we will use to load the file
+        using FileInputStream finStream = new(absolutePath);
+
+        // Now we can validate it
+        if (!handler.Validate(finStream))
+            throw new Exception($"Failed to import '{path}' using handler '{handler.Metadata.name}'!");
+
+        // Create the new resource 
+        ModelResource resource = new()
+        {
+            ResourceState  = ResourceState.Unloaded,
+            ResourceOrigin = path,
+            ReferenceCount = 0,
+            Parameters     = parameters
+        };
+
+        if (!handler.Load(finStream, resource))
+            throw new Exception($"Failed to import '{path}' using handler '{handler.Metadata.name}'!\nUnknown error.");
+
+        // Store the resource in our cache
+        resourceCache[name] = resource;
+
+        return name;
+    }
+
+    public override void Purge()
+    {
+        // Get the list of resources to purge...
+        List<ulong> resourcesToPurge =
+             resourceCache
+            .Where((kvp => kvp.Value.ReferenceCount == 0 && kvp.Value.ResourceState == ResourceState.Unloaded))
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (ulong resource in resourcesToPurge)
+        {
+            resourceCache[resource] = null;
+            resourceCache.Remove(resource, out _);
+        }
+    }
+}

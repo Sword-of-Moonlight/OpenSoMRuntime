@@ -1,0 +1,22 @@
+# OpenSoMRuntime .gitignore
+
+# Ignore everything by default
+/*
+
+# Keep these directories
+!/Assets
+!/Packages
+!/ProjectSettings
+
+# We want to ignore streaming assets, as it is absolutely filled with SoM game data. We will keep the data for Reign (as I have the rights to do so), and the soundfonts.
+/Assets/StreamingAssets/*
+!/Assets/StreamingAssets/GameData_Reign
+!/Assets/StreamingAssets/GameData_Reign.meta
+!/Assets/StreamingAssets/SoundFont
+
+# Apparently git also needs these explicity ignored...
+!/.gitattributes
+!/.gitignore
+
+*.csproj
+*.sln

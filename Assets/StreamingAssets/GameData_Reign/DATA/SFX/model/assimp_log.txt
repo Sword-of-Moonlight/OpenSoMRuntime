@@ -1,0 +1,8 @@
+Info,  T9364: Load $$$___magic___$$$..mdl
+Info,  T9364: Found a matching importer for this file format
+Info,  T9364: Import root directory is './'
+Info,  T9364: TriangulateProcess finished. All polygons have been triangulated.
+Info,  T9364: MakeVerboseFormatProcess finished. There was much work to do ...
+Info,  T9364: Entering post processing pipeline
+Info,  T9364: JoinVerticesProcess finished | Verts in: 90 out: 60 | ~33.3333
+Info,  T9364: Leaving post processing pipeline
