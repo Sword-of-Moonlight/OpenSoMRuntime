@@ -122,7 +122,26 @@ public partial class SoMEventFile
                 // Displays a message on the screen
                 case 0:
                     string dispMsgText = fis.ReadFixedString(PayloadSize, EncodingExtensions.SJIS).Sanitise();
-                    decodedOps.Add(new RuntimeEventOperationDisplayMessage { Text = dispMsgText });
+
+                    decodedOps.Add(new RuntimeEventOperationDisplayMessage 
+                    { 
+                        text = dispMsgText 
+                    });
+                    break;
+
+                // Change Page (Operation 0x0091)
+                // Changes the active page for an event
+                case 145:
+                    short changePageTarget = fis.ReadS16();
+                    byte  changePageMvType = fis.ReadU8();
+                    byte  changePagePageTo = fis.ReadU8();
+
+                    decodedOps.Add(new RuntimeEventOperationChangeEventPage
+                    { 
+                        targetEvent = changePageTarget,
+                        moveType = changePageMvType,
+                        pageToMoveTo = changePagePageTo
+                    });
                     break;
 
                 // Return          (Operation 0xFFFF)

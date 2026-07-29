@@ -1,5 +1,5 @@
 public interface IRuntimeEventOperation
 {
     public short OpCode { get; }
-    RuntimeEventInterpreterState Do();
+    RuntimeEventInterpreterState Do(RuntimeEventInterpreterData interpreterData);
 }

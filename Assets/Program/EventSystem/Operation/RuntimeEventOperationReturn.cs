@@ -5,6 +5,6 @@ public class RuntimeEventOperationReturn : IRuntimeEventOperation
     /// <summary>
     /// Simply returns the free state, as the event has finished.
     /// </summary>
-    public RuntimeEventInterpreterState Do() =>
+    public RuntimeEventInterpreterState Do(RuntimeEventInterpreterData interpreterData) =>
         RuntimeEventInterpreterState.Free;
 }

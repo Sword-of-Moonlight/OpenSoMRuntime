@@ -15,6 +15,8 @@ public class EventManager : MonoBehaviour
     /// </summary>
     RuntimeEventInterpreterData interpreterData = new RuntimeEventInterpreterData();
 
+    public RuntimeEvent[] Events => eventStack;
+
     /// <summary>
     /// Singleton Instance
     /// </summary>
@@ -129,6 +131,7 @@ public class EventManager : MonoBehaviour
 
         // When all of the above checks have passed... We can finally begin executing the event.
         interpreterData.Reset();
+        interpreterData.Event   = ev;
         interpreterData.Program = ev.CurrentPage.Payload;
 
         // Resume event is called to begin processing, as we are resuming from the first operation.
@@ -145,7 +148,7 @@ public class EventManager : MonoBehaviour
 
         do
         {
-            interpreterData.State = interpreterData.Program[interpreterData.PC++].Do();
+            interpreterData.State = interpreterData.Program[interpreterData.PC++].Do(interpreterData);
         } 
         while (interpreterData.State == RuntimeEventInterpreterState.Executing);
 
