@@ -51,6 +51,9 @@ public class MapController : MonoBehaviour
         // Load the map data...
         mapData.Load(mapID);
 
+        // Also load up the events for this map...
+        EventManager.Instance.LoadEventsFromFile($"{ResourceManager.ResourceRoot}\\DATA\\MAP\\{mapID:D2}.evt");
+
         // Any data from the save file to override the loaded map with?..
 
         // Setup Segment
@@ -63,6 +66,9 @@ public class MapController : MonoBehaviour
         SetupMapObjects();
 
         SetupMapMusic();
+
+        // After map load we execute the "Open Map" System Event
+        EventManager.Instance.ExecuteEvent(0);
 
         // After all of this nonsense, purge the resource manager to free now unused assets...
         ResourceManager.Purge();

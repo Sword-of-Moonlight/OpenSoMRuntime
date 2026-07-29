@@ -158,7 +158,6 @@ public class SoMMapData : ScriptableObject
     public void Load(int mapID)
     {
         LoadMPX($"{ResourceManager.ResourceRoot}\\DATA\\MAP\\{mapID:D2}.mpx");
-        // LoadEVT($"{ResourceManager.ResourceRoot}\\DATA\\MAP\\{mapID:D2}.evt");
     }
 
     /// <summary>

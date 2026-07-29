@@ -139,8 +139,33 @@ public class PlayerController : MonoBehaviour
     /// </summary>
     public unsafe void Move(Vector2 input, float speed)
     {
-        moveInputTarget = input;
-        moveSpeedTarget = speed;
+        // Smooth input
+        if (MoveInertia <= 0f)
+        {
+            moveInputCurrent = input;
+            moveSpeedCurrent = speed;
+        }
+        else
+        {
+            moveInputCurrent = Vector2.SmoothDamp(moveInputCurrent, input, ref moveInputDampingVelocity, MoveInertia);
+            moveSpeedCurrent = Mathf.SmoothDamp(moveSpeedCurrent, speed, ref moveSpeedDampingVelocity, MoveInertia);
+        }
+
+        // Calculate the horizontal movement movement...
+        Vector3 localDir = new Vector3(moveInputCurrent.x, 0f, moveInputCurrent.y);
+        Vector3 worldDir = transform.TransformDirection(localDir);
+
+        if (worldDir.sqrMagnitude > 1f)
+            worldDir.Normalize();
+
+        Vector3 horizontalVelocity = worldDir * moveSpeedCurrent;
+
+        // I'm too fucking stupid to get proper movement going, so... We're going with this for now.
+        transform.position += horizontalVelocity * Time.deltaTime;
+
+        // Reset input targets
+        moveInputTarget = Vector2.zero;
+        moveSpeedTarget = 0f;
     }
 
     /// <summary>
@@ -192,7 +217,6 @@ public class PlayerController : MonoBehaviour
 
         // Turning is processed outside of the input being applied, so inertia can be used
         TurnInternal();
-        MoveInternal();
     }
 
     /// <summary>
@@ -227,28 +251,6 @@ public class PlayerController : MonoBehaviour
         // Apply pitch rotation to the camera transform
         lookRotation.y = Mathf.Clamp(lookRotation.y - deltaPitch, LookMinPitch, LookMaxPitch);
         Camera.transform.localRotation = Quaternion.Euler(lookRotation.y, 0f, 0f);
-    }
-
-    /// <summary>
-    /// Internal processing function for move.
-    /// </summary>
-    void MoveInternal()
-    {
-        // Smooth input
-        if (MoveInertia <= 0f)
-        {
-            moveInputCurrent = moveInputTarget;
-            moveSpeedCurrent = moveSpeedTarget;
-        }
-        else
-        {
-            moveInputCurrent = Vector2.SmoothDamp(moveInputCurrent, moveInputTarget, ref moveInputDampingVelocity, MoveInertia);
-            moveSpeedCurrent = Mathf.SmoothDamp(moveSpeedCurrent, moveSpeedTarget, ref moveSpeedDampingVelocity, MoveInertia);
-        }
-
-        // Reset input targets
-        moveInputTarget = Vector2.zero;
-        moveSpeedTarget = 0f;
     }
 
     /// <summary>
