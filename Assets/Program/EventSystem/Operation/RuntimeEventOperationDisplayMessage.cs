@@ -10,7 +10,8 @@ public class RuntimeEventOperationDisplayMessage : IRuntimeEventOperation
     /// </summary>
     public RuntimeEventInterpreterState Do(RuntimeEventInterpreterData interpreterData)
     {
-        GameManager.Instance.MenuManager.ShowSystemMessage(text, EventManager.Instance.ResumeEvent);
+        MenuEventMessage messageBox = GameManager.Instance.MenuManager.OpenMenu("EventMessage") as MenuEventMessage;
+        messageBox.SetText(text);
 
         return RuntimeEventInterpreterState.Halt;
     }    
