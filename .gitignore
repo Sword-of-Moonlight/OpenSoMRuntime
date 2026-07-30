@@ -14,6 +14,12 @@
 !/Assets/StreamingAssets/GameData_Reign.meta
 !/Assets/StreamingAssets/SoundFont
 
+!/Tools
+/Tools/DebugTools/.vs
+/Tools/DebugTools/MDLSleuth/obj
+/Tools/DebugTools/MDLSleuth/bin
+/Tools/DebugTools/MDLSleuth/Properties/*
+
 # Apparently git also needs these explicity ignored...
 !/.gitattributes
 !/.gitignore
