@@ -34,7 +34,12 @@ public class ClassicSky : BaseSky
     public void LoadClassicSky(int skyID)
     {
         // Load the sky resource...
-        ulong resourceName = ResourceManager.Load<ModelResource>($"{ResourceManager.ResourceRoot}\\DATA\\MAP\\MODEL\\SKY{skyID:D2}.mdo", new ModelParameters { ModelType = ModelParameterType.Static, CreateDefaultMaterials = false});
+        if (!ResourceManager.Find($"DATA\\MAP\\MODEL\\SKY{skyID:D2}.mdo", out string foundSkyFile))
+            return;
+
+        ulong resourceName = ResourceManager.Load<ModelResource>(foundSkyFile, 
+            new ModelParameters { ModelType = ModelParameterType.Static, CreateDefaultMaterials = false}
+            );
 
         // Then get it immediately.
         skyModelResource = ResourceManager.Get<ModelResource>(resourceName);
@@ -65,9 +70,12 @@ public class ClassicSky : BaseSky
             // We must load the texture and assign it to the material
             if (materialDefinition.textureFileName != string.Empty)
             {
-                resourceName = ResourceManager.Load<TextureResource>($"{ResourceManager.ResourceRoot}\\DATA\\MAP\\MODEL\\{materialDefinition.textureFileName}");
-                TextureResource skyTextureResource = ResourceManager.Get<TextureResource>(resourceName);
-                newMaterial.mainTexture = skyTextureResource.Get();
+                if (ResourceManager.Find($"DATA\\MAP\\MODEL\\{materialDefinition.textureFileName}", out string foundSkyTexture))
+                {
+                    resourceName = ResourceManager.Load<TextureResource>(foundSkyTexture);
+                    TextureResource skyTextureResource = ResourceManager.Get<TextureResource>(resourceName);
+                    newMaterial.mainTexture = skyTextureResource.Get();
+                }
             }
 
             materialList[i] = newMaterial;

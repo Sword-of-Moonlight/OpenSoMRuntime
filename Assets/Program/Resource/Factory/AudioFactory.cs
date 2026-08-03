@@ -24,16 +24,14 @@ public class AudioFactory : ResourceFactory<AudioResource>
             return name;
 
         // Lets create our absolute path now
-        string absolutePath = Path.Combine(ResourceManager.ResourceRoot, path);
-
-        if (!File.Exists(absolutePath))
-            throw new Exception($"Failed to import '{path}' located '{absolutePath}'!\nFile does not exist");
+        if (!File.Exists(path))
+            throw new Exception($"Failed to import '{path}'!\nFile does not exist");
 
         // Try to find a loader for this resource
         FormatHandler<AudioResource> handler = GetFormatHandler(Path.GetExtension(path)) ?? throw new Exception($"Couldn't find format handler for '{path}'!");
 
         // Create the stream we will use to load the file
-        using FileInputStream finStream = new(absolutePath);
+        using FileInputStream finStream = new(path);
 
         // Now we can validate it
         if (!handler.Validate(finStream))

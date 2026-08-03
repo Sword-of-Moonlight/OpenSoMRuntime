@@ -12,8 +12,8 @@ public static class ResourceManager
 {
     // Factories
     static readonly TextureFactory textureFactory = new();
-    static readonly AudioFactory audioFactory     = new();
-    static readonly ModelFactory modelFactory     = new();
+    static readonly AudioFactory audioFactory = new();
+    static readonly ModelFactory modelFactory = new();
 
     static readonly Dictionary<Type, object> factories = new Dictionary<Type, object>
     {
@@ -22,16 +22,46 @@ public static class ResourceManager
         { typeof(ModelResource),   modelFactory   }
     };
 
-    /// <summary>Root path for resources</summary>
-    public static string ResourceRoot { get; private set; }
+    /// <summary>Stores a set of file sources, i.e. directories which can be looked at for resources</summary>
+    public static List<string> ResourceRoots { get; private set; } = null;
 
     /// <summary>
     /// Initializes the resource manager
     /// </summary>
-    public static void Initialize(string resourceRoot)
+    public static void Initialize()
     {
-        ResourceRoot = resourceRoot;
+        ResourceRoots = new List<string>();
     }
+
+    /// <summary>
+    /// Adds a new resource root to the resource manager.<br/>
+    /// The <b>LAST</b> item added is considered the priority root.
+    /// </summary>
+    public static void AssignResourceRoot(string resourceRoot)
+    {
+        if (string.IsNullOrEmpty(resourceRoot))
+            return;
+
+        ResourceRoots.Add(resourceRoot);
+    }
+
+    public static bool Find(string find, out string foundPath)
+    {
+        for (int i = ResourceRoots.Count - 1; i >= 0; --i)
+        {
+            if (!File.Exists(Path.Combine(ResourceRoots[i], find)))
+                continue;
+
+            foundPath = Path.Combine(ResourceRoots[i], find);
+            return true;
+        }
+
+        Logger.Custom("RESR", 0x8040F0, $"Failed to find file: '{find}'");
+
+        foundPath = null;
+        return false;
+    }
+        
 
     /// <summary>
     /// Purges any dead assets from each of the factories
@@ -51,6 +81,12 @@ public static class ResourceManager
         using StringWriter sw = new StringWriter();
 
         sw.WriteLine("ResourceManager::Dump {");
+
+        // Roots
+        sw.WriteLine($"\tRoots = {{");
+        foreach (string resourceRoot in ResourceRoots)
+            sw.WriteLine($"\t\t'{resourceRoot}',");
+        sw.WriteLine($"\t}},");
 
         // Textures
         sw.WriteLine($"\tLoaded Texture Info = {{");

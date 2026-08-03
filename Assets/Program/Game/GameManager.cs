@@ -31,6 +31,7 @@ public class GameManager : MonoBehaviour
     // Public Data
     public GameStateMachine StateMachine { get; private set; }
     public string ProjectPath { get; private set; }
+    public string EditorPath { get; private set; }
     public string DataPath { get; private set; }
 
     [field: Header("Debugging")]
@@ -90,31 +91,30 @@ public class GameManager : MonoBehaviour
     void SetupRuntimeEnviroment()
     {
         // Testing Grabbing CMD for SOM-DB replacement support
-        foreach (string arg in Environment.GetCommandLineArgs())
+        string[] arguments = Environment.GetCommandLineArgs();
+        foreach (string arg in arguments)
             Logger.Info($"CMD ARG = {arg}");
-
 
         if (MultiGameMode)
         {
             ProjectPath = Path.Combine(Path.GetFullPath(Application.streamingAssetsPath), $"GameData_{MultiGameName}");
-            DataPath    = Path.Combine(Path.GetFullPath(Application.persistentDataPath), MultiGameName);
-        }        
+            DataPath = Path.Combine(Path.GetFullPath(Application.persistentDataPath), MultiGameName);
+        }
         else
         {
             ProjectPath = Path.GetFullPath(Application.streamingAssetsPath);
-            DataPath    = Path.GetFullPath(Application.persistentDataPath);
+            DataPath = Path.GetFullPath(Application.persistentDataPath);
         }
+
+        // TO-DO: Fix
+        // EditorPath = arguments[2];
+        // ProjectPath = arguments[1];
 
         if (!Directory.Exists(DataPath))
             Directory.CreateDirectory(DataPath);
 
-        Logger.Info($"Paths: {{\n\tProject = '{ProjectPath}',\n\tData = '{DataPath}'\n}}");
-
         // New Session Data
         SessionData = new SessionData();
-
-        // Initialize Resource Manager
-        ResourceManager.Initialize(ProjectPath);
 
         // Initialize State Machine
         StateMachine = new GameStateMachine();
@@ -138,6 +138,12 @@ public class GameManager : MonoBehaviour
     /// </summary>
     void InitializeGameData()
     {
+        // Initialize Resource Manager
+        ResourceManager.Initialize();
+        ResourceManager.AssignResourceRoot(EditorPath);
+        ResourceManager.AssignResourceRoot(ProjectPath);
+
+        // Load actual project data...
         ProjectData.LoadLegacyProject(ProjectPath);
 
         if (ForceInitialMap >= 0)

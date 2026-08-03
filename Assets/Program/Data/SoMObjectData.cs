@@ -28,13 +28,15 @@ public class SoMObjectData : ScriptableObject
 
         if (modelResources[parameters.profileID] == null)
         {
-            // Here we should be loading model data, and _also_ returning that... It should all be stored in here so none goes missing anywhere!!!
-            ulong resourceName = ResourceManager.Load<ModelResource>($"{ResourceManager.ResourceRoot}\\DATA\\OBJ\\MODEL\\{profile.modelFile}",
+            if (!ResourceManager.Find($"DATA\\OBJ\\MODEL\\{profile.modelFile}", out string foundObjectModel))
+                throw new Exception("Failed to load object data!");
+
+            ulong resourceName = ResourceManager.Load<ModelResource>(foundObjectModel,
                 new ModelParameters
                 {
                     CreateDefaultMaterials = true,
-                    ModelType = ModelParameterType.Static,
-                    TextureRootPath = $"{ResourceManager.ResourceRoot}\\DATA\\OBJ\\MODEL"
+                    ModelType       = ModelParameterType.Static,
+                    TextureRootPath = $"DATA\\OBJ\\MODEL"
                 }
             );
 
@@ -68,8 +70,11 @@ public class SoMObjectData : ScriptableObject
     /// </summary>
     public void Load()
     {
-        LoadPR2($"{ResourceManager.ResourceRoot}\\PARAM\\OBJ.PR2");
-        LoadPRM($"{ResourceManager.ResourceRoot}\\PARAM\\OBJ.PRM");
+        if (ResourceManager.Find("PARAM\\OBJ.PR2", out string foundPR2File))
+            LoadPR2(foundPR2File);
+
+        if (ResourceManager.Find("PARAM\\OBJ.PRM", out string foundPRMFile))
+            LoadPRM(foundPRMFile);
 
         // We will load models here, so create an array which can hold one model for each profile.
         modelResources = new ModelResource[ObjectProfiles.Length];

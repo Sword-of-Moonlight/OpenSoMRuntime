@@ -96,118 +96,112 @@ public class SoMMenuAssets : ScriptableObject
         if (GameManager.Instance.ProjectData.defaultGaugeType != 0)
         {
             // Load the gauge texture
-            resourceName     = ResourceManager.Load<TextureResource>($"{ResourceManager.ResourceRoot}\\DATA\\MENU\\GAGE{GameManager.Instance.ProjectData.defaultGaugeType:D1}.bmp");
-            menuGaugeTexture = ResourceManager.Get<TextureResource>(resourceName);
-
-            // Parse gauge into sprites...
-            Texture2D gaugeUnityTexture = menuGaugeTexture.Get();
-
-            // Gauge
-            GaugeFrameSprite = Sprite.Create(
-                gaugeUnityTexture,
-                new Rect(0, 187, 255, 69),
-                new Vector2(0.5F, 0.5F),
-                100F);
-
-            GaugePowerBarSprite = Sprite.Create(
-                gaugeUnityTexture,
-                new Rect(120, 40, 128, 16),
-                new Vector2(0.5F, 0.5F),
-                100F);
-
-            GaugeFocusBarSprite = Sprite.Create(
-                gaugeUnityTexture,
-                new Rect(120, 16, 128, 16),
-                new Vector2(0.5F, 0.5F),
-                100F);
-
-            GaugeNumberSprites = new Sprite[10];
-
-            for (int i = 0; i < 10; ++i)
+            if (ResourceManager.Find($"DATA\\MENU\\GAGE{GameManager.Instance.ProjectData.defaultGaugeType:D1}.bmp", out string foundGaugeTexture))
             {
-                GaugeNumberSprites[i] = Sprite.Create(
+                resourceName = ResourceManager.Load<TextureResource>(foundGaugeTexture);
+                menuGaugeTexture = ResourceManager.Get<TextureResource>(resourceName);
+
+                // Parse gauge into sprites...
+                Texture2D gaugeUnityTexture = menuGaugeTexture.Get();
+
+                // Gauge
+                GaugeFrameSprite = Sprite.Create(
                     gaugeUnityTexture,
-                    new Rect(10 * i, 38, 10, 18),
+                    new Rect(0, 187, 255, 69),
                     new Vector2(0.5F, 0.5F),
                     100F);
+
+                GaugePowerBarSprite = Sprite.Create(
+                    gaugeUnityTexture,
+                    new Rect(120, 40, 128, 16),
+                    new Vector2(0.5F, 0.5F),
+                    100F);
+
+                GaugeFocusBarSprite = Sprite.Create(
+                    gaugeUnityTexture,
+                    new Rect(120, 16, 128, 16),
+                    new Vector2(0.5F, 0.5F),
+                    100F);
+
+                GaugeNumberSprites = new Sprite[10];
+
+                for (int i = 0; i < 10; ++i)
+                {
+                    GaugeNumberSprites[i] = Sprite.Create(
+                        gaugeUnityTexture,
+                        new Rect(10 * i, 38, 10, 18),
+                        new Vector2(0.5F, 0.5F),
+                        100F);
+                }
+
+
+                // Status
+                StatusPoisonSprite = Sprite.Create(
+                    gaugeUnityTexture,
+                    new Rect(0, 8, 24, 24),
+                    new Vector2(0.5F, 0.5F),
+                    100F);
+
+                StatusParalyzeSprite = Sprite.Create(
+                    gaugeUnityTexture,
+                    new Rect(24, 8, 24, 24),
+                    new Vector2(0.5F, 0.5F),
+                    100F);
+
+                StatusBlindSprite = Sprite.Create(
+                    gaugeUnityTexture,
+                    new Rect(48, 8, 24, 24),
+                    new Vector2(0.5F, 0.5F),
+                    100F);
+
+                StatusCurseSprite = Sprite.Create(
+                    gaugeUnityTexture,
+                    new Rect(72, 8, 24, 24),
+                    new Vector2(0.5F, 0.5F),
+                    100F);
+
+                StatusSlowSprite = Sprite.Create(
+                    gaugeUnityTexture,
+                    new Rect(96, 8, 24, 24),
+                    new Vector2(0.5F, 0.5F),
+                    100F);
+
+
+                // Compass
+                CompassFrameSprite = Sprite.Create(
+                    gaugeUnityTexture,
+                    new Rect(0, 62, 143, 122),
+                    new Vector2(0.5F, 0.5F),
+                    100F);
+
+                CompassArrowSprite = Sprite.Create(
+                    gaugeUnityTexture,
+                    new Rect(148, 120, 64, 64),
+                    new Vector2(0.5F, 0.34375F),
+                    100F);
             }
-
-
-            // Status
-            StatusPoisonSprite = Sprite.Create(
-                gaugeUnityTexture,
-                new Rect(0, 8, 24, 24),
-                new Vector2(0.5F, 0.5F),
-                100F);
-
-            StatusParalyzeSprite = Sprite.Create(
-                gaugeUnityTexture,
-                new Rect(24, 8, 24, 24),
-                new Vector2(0.5F, 0.5F),
-                100F);
-
-            StatusBlindSprite = Sprite.Create(
-                gaugeUnityTexture,
-                new Rect(48, 8, 24, 24),
-                new Vector2(0.5F, 0.5F),
-                100F);
-
-            StatusCurseSprite = Sprite.Create(
-                gaugeUnityTexture,
-                new Rect(72, 8, 24, 24),
-                new Vector2(0.5F, 0.5F),
-                100F);
-
-            StatusSlowSprite = Sprite.Create(
-                gaugeUnityTexture,
-                new Rect(96, 8, 24, 24),
-                new Vector2(0.5F, 0.5F),
-                100F);
-
-
-            // Compass
-            CompassFrameSprite = Sprite.Create(
-                gaugeUnityTexture,
-                new Rect(0, 62, 143, 122),
-                new Vector2(0.5F, 0.5F),
-                100F);
-
-            CompassArrowSprite = Sprite.Create(
-                gaugeUnityTexture,
-                new Rect(148, 120, 64, 64),
-                new Vector2(0.5F, 0.34375F),
-                100F);
         }
 
         // Load Menu Background.
-        try
+        if (GameManager.Instance.ProjectData.menuBackgroundFile != string.Empty)
         {
-            // First we need to make sure there is even a menu background to load
-            if (GameManager.Instance.ProjectData.menuBackgroundFile != string.Empty)
+            // Load the background texture
+            if (ResourceManager.Find($"DATA\\PICTURE\\{GameManager.Instance.ProjectData.menuBackgroundFile}", out string foundBackgroundTexture))
             {
                 // Get texture resource
-                resourceName = ResourceManager.Load<TextureResource>($"{ResourceManager.ResourceRoot}\\DATA\\PICTURE\\{GameManager.Instance.ProjectData.menuBackgroundFile}");
+                resourceName = ResourceManager.Load<TextureResource>(foundBackgroundTexture);
                 menuBackgroundTexture = ResourceManager.Get<TextureResource>(resourceName);
 
                 // Grab the unity texture
                 MenuBackground = menuBackgroundTexture.Get();
             }
-            else
-                MenuBackground = null;
-        }
-        catch (Exception ex)
-        {
-            Logger.Error(ex.Message);
-
-            menuBackgroundTexture = null;
-            resourceName = 0;
         }
 
         // Load Frame Assets. 'NoFrame', 'frameG1', 'frameG2', 'frameS1', 'frameS2'
-        try
+        if (ResourceManager.Find($"DATA\\MENU\\{frameFilename[GameManager.Instance.ProjectData.defaultMenuStyle]}", out string foundFrameTexture))
         {
             // Get frame texture resource
-            resourceName     = ResourceManager.Load<TextureResource>($"{ResourceManager.ResourceRoot}\\DATA\\MENU\\{frameFilename[GameManager.Instance.ProjectData.defaultMenuStyle]}");
+            resourceName     = ResourceManager.Load<TextureResource>(foundFrameTexture);
             menuFrameTexture = ResourceManager.Get<TextureResource>(resourceName);
 
             // Grab our sprites from the frame texture
@@ -227,13 +221,6 @@ public class SoMMenuAssets : ScriptableObject
             FrameBackgroundInactive = CreateFrameSprite(frameUnityTexture, new Vector2(120, 216), new Vector2(40, 40),   Vector4.zero);
             FrameBackgroundActive   = CreateFrameSprite(frameUnityTexture, new Vector2(120, 176), new Vector2(40, 40),   Vector4.zero);
             FrameBackgroundError    = CreateFrameSprite(frameUnityTexture, new Vector2(120, 136), new Vector2(40, 40),   Vector4.zero);
-        } 
-        catch (Exception ex)
-        {
-            Logger.Error(ex.Message);
-
-            menuFrameTexture = null;
-            resourceName     = 0;
         }
 
         // Load Menu Sounds
@@ -242,24 +229,36 @@ public class SoMMenuAssets : ScriptableObject
             int menuSoundBase = 1008 + (4 * (GameManager.Instance.ProjectData.menuSoundType - 1));
 
             // Error Sound
-            resourceName = ResourceManager.Load<AudioResource>($"{ResourceManager.ResourceRoot}\\DATA\\SOUND\\SE\\{(menuSoundBase + 0):D4}.SND");
-            menuErrorSound = ResourceManager.Get<AudioResource>(resourceName);
-            ErrorSound = menuErrorSound.Get();
+            if (ResourceManager.Find($"DATA\\SOUND\\SE\\{(menuSoundBase + 0):D4}.SND", out string foundErrorSound))
+            {
+                resourceName   = ResourceManager.Load<AudioResource>(foundErrorSound);
+                menuErrorSound = ResourceManager.Get<AudioResource>(resourceName);
+                ErrorSound     = menuErrorSound.Get();
+            }
 
             // Confirm Sound
-            resourceName = ResourceManager.Load<AudioResource>($"{ResourceManager.ResourceRoot}\\DATA\\SOUND\\SE\\{(menuSoundBase + 1):D4}.SND");
-            menuConfirmSound = ResourceManager.Get<AudioResource>(resourceName);
-            ConfirmSound = menuConfirmSound.Get();
+            if (ResourceManager.Find($"DATA\\SOUND\\SE\\{(menuSoundBase + 1):D4}.SND", out string foundConfirmSound))
+            {
+                resourceName     = ResourceManager.Load<AudioResource>(foundConfirmSound);
+                menuConfirmSound = ResourceManager.Get<AudioResource>(resourceName);
+                ConfirmSound     = menuConfirmSound.Get();
+            }
 
             // Cancel Sound
-            resourceName = ResourceManager.Load<AudioResource>($"{ResourceManager.ResourceRoot}\\DATA\\SOUND\\SE\\{(menuSoundBase + 2):D4}.SND");
-            menuCancelSound = ResourceManager.Get<AudioResource>(resourceName);
-            CancelSound = menuCancelSound.Get();
+            if (ResourceManager.Find($"DATA\\SOUND\\SE\\{(menuSoundBase + 2):D4}.SND", out string foundCancelSound))
+            {
+                resourceName    = ResourceManager.Load<AudioResource>(foundCancelSound);
+                menuCancelSound = ResourceManager.Get<AudioResource>(resourceName);
+                CancelSound     = menuCancelSound.Get();
+            }
 
             // Select Sound
-            resourceName = ResourceManager.Load<AudioResource>($"{ResourceManager.ResourceRoot}\\DATA\\SOUND\\SE\\{(menuSoundBase + 3):D4}.SND");
-            menuSelectSound = ResourceManager.Get<AudioResource>(resourceName);
-            SelectSound = menuSelectSound.Get();
+            if (ResourceManager.Find($"DATA\\SOUND\\SE\\{(menuSoundBase + 3):D4}.SND", out string foundSelectSound))
+            {
+                resourceName    = ResourceManager.Load<AudioResource>(foundSelectSound);
+                menuSelectSound = ResourceManager.Get<AudioResource>(resourceName);
+                SelectSound     = menuSelectSound.Get();
+            }
         }
     }
 

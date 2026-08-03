@@ -12,16 +12,17 @@ public class SoMLevelCurve : ScriptableObject
     public void Initialize()
     {
         // Get the filename for the current lvt file
-        string lvtFile = $"{ResourceManager.ResourceRoot}\\PARAM\\{GameManager.Instance.ProjectData.playerLevelCurveType}.LVT";
+        if (ResourceManager.Find($"PARAM\\{GameManager.Instance.ProjectData.playerLevelCurveType}.LVT", out string foundLvtFile))
+            return;
 
         // Initialize Curves
         experienceCurve = new AnimationCurve();
-        hpCurve = new AnimationCurve();
-        mpCurve = new AnimationCurve();
-        strengthCurve = new AnimationCurve();
-        magicCurve = new AnimationCurve();
+        hpCurve         = new AnimationCurve();
+        mpCurve         = new AnimationCurve();
+        strengthCurve   = new AnimationCurve();
+        magicCurve      = new AnimationCurve();
 
-        using FileInputStream fis = new FileInputStream(lvtFile);
+        using FileInputStream fis = new FileInputStream(foundLvtFile);
 
         // We must convert relative to absolute for these...
         int hpAccumulator  = GameManager.Instance.ProjectData.playerConfigNormal.startHP;

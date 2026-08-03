@@ -183,17 +183,17 @@ public class ModelResource : BaseResource<Mesh>
                                     resourceOrigin = $"{((ModelParameters)Parameters).TextureRootPath}\\{materialDefinition.textureFileName}";
 
                                     // We won't error - because it doesn't matter really.
-                                    if (!File.Exists(resourceOrigin))
+                                    if (!ResourceManager.Find(resourceOrigin, out string foundOrigin))
                                         break;
 
                                     // Load 'n' grab.
-                                    resourceName = ResourceManager.Load<TextureResource>(resourceOrigin);
+                                    resourceName    = ResourceManager.Load<TextureResource>(foundOrigin);
                                     textureResource = ResourceManager.Get<TextureResource>(resourceName); 
                                     break;
 
                                 case ModelMaterialTextureMode.Blob:
                                     // Load 'n' grab.
-                                    resourceName = ResourceManager.Load<TextureResource>(materialDefinition.textureBlob);
+                                    resourceName    = ResourceManager.Load<TextureResource>(materialDefinition.textureBlob);
                                     textureResource = ResourceManager.Get<TextureResource>(resourceName);
                                     break;
                             }

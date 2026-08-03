@@ -75,11 +75,8 @@ public class MusicManager : MonoBehaviour
     /// </summary>
     public void Play(string musicFileName, bool loop)
     {
-        // Create path to the music file...
-        string musicFilePath = $"{ResourceManager.ResourceRoot}\\DATA\\SOUND\\BGM\\{musicFileName}";
-
-        // If the file doesn't exist, return quietly.
-        if (!File.Exists(musicFilePath))
+        // Get path to the music file...
+        if (!ResourceManager.Find($"DATA\\SOUND\\BGM\\{musicFileName}", out string musicFilePath))
             return;
             
         switch (Path.GetExtension(musicFilePath).ToUpperInvariant())

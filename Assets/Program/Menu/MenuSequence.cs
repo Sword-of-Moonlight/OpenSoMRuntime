@@ -50,109 +50,128 @@ public class MenuSequence : MenuBase
         switch (sequence.mode)
         {
             case SoMSequenceMode.Video:
-                sequenceVideoPlayer.gameObject.SetActive(true);
-                sequenceVideoPlayer.enabled = true;
-                sequenceVideoPlayer.source = VideoSource.Url;
-                sequenceVideoPlayer.url = $"{ResourceManager.ResourceRoot}\\{sequence.file}";
 
-                sequenceVideoPlayer.loopPointReached += OnVideoPlayerLoopPointReached;
+                if (!ResourceManager.Find(sequence.file, out string foundSeqVideo))
+                    SequenceComplete?.Invoke();
+                else
+                {
+                    sequenceVideoPlayer.gameObject.SetActive(true);
+                    sequenceVideoPlayer.enabled = true;
+                    sequenceVideoPlayer.source = VideoSource.Url;
+                    sequenceVideoPlayer.url = foundSeqVideo;
 
-                sequenceVideoPlayer.Play();
+                    sequenceVideoPlayer.loopPointReached += OnVideoPlayerLoopPointReached;
+                    sequenceVideoPlayer.Play();
+                }   
                 break;
 
             case SoMSequenceMode.SlideShow:
-                if (!SoMSlideshow.LoadFromFile($"{ResourceManager.ResourceRoot}\\{sequence.file}", out SoMSlideshow slideshow))
+
+                if (!ResourceManager.Find(sequence.file, out string foundSeqSlideshow))
                     SequenceComplete?.Invoke();
-
-                // Convert SlideShow to DOTween sequence
-                slideshowSequence = DOTween.Sequence();
-
-                // Each frame becomes a mess of tweens
-                for (int i = 0; i < slideshow.NumberOfSlides; ++i)
+                else
                 {
-                    SoMSlideshowSlide slide = slideshow.Slides[i];
+                    if (!SoMSlideshow.LoadFromFile(foundSeqSlideshow, out SoMSlideshow slideshow))
+                        SequenceComplete?.Invoke();
 
-                    // Set up image and text.
-                    slideshowSequence.AppendCallback(() =>
+                    // Convert SlideShow to DOTween sequence
+                    slideshowSequence = DOTween.Sequence();
+
+                    // Each frame becomes a mess of tweens
+                    for (int i = 0; i < slideshow.NumberOfSlides; ++i)
                     {
-                        // Clear sequence text
-                        sequenceTextField.SetText(string.Empty);
+                        SoMSlideshowSlide slide = slideshow.Slides[i];
 
-                        // If a slideshow image is already loaded, free it.
-                        slideshowImage?.Free();
-
-                        // Should this frame have an image?
-                        if (!slide.imageFileName.Equals("NO_BMP", StringComparison.InvariantCultureIgnoreCase))
+                        // Set up image and text.
+                        slideshowSequence.AppendCallback(() =>
                         {
-                            // Load the image to display...
-                            ulong slideshowImageName = ResourceManager.Load<TextureResource>($"{ResourceManager.ResourceRoot}\\DATA\\PICTURE\\{slide.imageFileName}");
+                            // Clear sequence text
+                            sequenceTextField.SetText(string.Empty);
 
-                            // Get it...
-                            slideshowImage = ResourceManager.Get<TextureResource>(slideshowImageName);
+                            // If a slideshow image is already loaded, free it.
+                            slideshowImage?.Free();
 
-                            // Get the native unity resource
-                            sequenceImageRenderer.texture = slideshowImage.Get();
+                            // Should this frame have an image?
+                            if (!slide.imageFileName.Equals("NO_BMP", StringComparison.InvariantCultureIgnoreCase))
+                            {
+                                // Load the image to display...
+                                if (ResourceManager.Find($"DATA\\PICTURE\\{slide.imageFileName}", out string slideShowImage))
+                                {
+                                    ulong slideshowImageName = ResourceManager.Load<TextureResource>(slideShowImage);
 
-                            sequenceImageRenderer.color = new Color(1, 1, 1, 0);
-                        }
-                        else
-                            // Where no image is wanted, display black...
-                            sequenceImageRenderer.color = Color.black;
+                                    // Get it...
+                                    slideshowImage = ResourceManager.Get<TextureResource>(slideshowImageName);
+
+                                    // Get the native unity resource
+                                    sequenceImageRenderer.texture = slideshowImage.Get();
+
+                                    sequenceImageRenderer.color = new Color(1, 1, 1, 0);
+                                }
+                                else
+                                {
+                                    sequenceImageRenderer.texture = null;
+                                    sequenceImageRenderer.color   = new Color(0, 0, 0, 0);
+                                }
+                            }
+                            else
+                                // Where no image is wanted, display black...
+                                sequenceImageRenderer.color = Color.black;
+                        });
+
+                        // Fade image in for one second...
+                        slideshowSequence.Append(sequenceImageRenderer.DOFade(1F, 1.5F));
+
+                        // Wait for (around) 1 second ?..
+                        //
+                        // These timings are all slightly off... They're close? 
+                        // EDIT: actually, maybe they're fine.
+                        //
+                        slideshowSequence.AppendInterval(2F);
+
+                        // Show the text, then wait for the slide time
+                        slideshowSequence.AppendCallback(() => sequenceTextField.SetText(slide.text));
+                        slideshowSequence.AppendInterval(slide.displayTimeMilliSecs / 1000F);
+
+                        // Remove text and fade out
+                        slideshowSequence.AppendCallback(() => sequenceTextField.SetText(string.Empty));
+                        slideshowSequence.Append(sequenceImageRenderer.DOFade(0F, 1.0F));
+
+                        // Wait for (around) 1 second?..
+                        slideshowSequence.AppendInterval(1.5F);
+                    }
+
+                    slideshowSequence.OnStart(() =>
+                    {
+                        // Load BGM - I mean... If you're uh... ready?
+                        if (!slideshow.MusicFileName.Equals("NO_BGM", StringComparison.InvariantCultureIgnoreCase))
+                            MusicManager.Instance.Play(slideshow.MusicFileName, false);
+
+                        // Enable sequence objects
+                        sequenceImageRenderer.gameObject.SetActive(true);
+                        sequenceTextField.gameObject.SetActive(true);
                     });
 
-                    // Fade image in for one second...
-                    slideshowSequence.Append(sequenceImageRenderer.DOFade(1F, 1.5F));
+                    slideshowSequence.OnComplete(() =>
+                    {
+                        // Disable sequence objects
+                        sequenceImageRenderer.gameObject.SetActive(false);
+                        sequenceImageRenderer.texture = null;
+                        sequenceTextField.gameObject.SetActive(false);
 
-                    // Wait for (around) 1 second ?..
-                    //
-                    // These timings are all slightly off... They're close? 
-                    // EDIT: actually, maybe they're fine.
-                    //
-                    slideshowSequence.AppendInterval(2F);
+                        // Free slide show resources...
+                        slideshowImage?.Free();
+                        slideshowImage = null;
 
-                    // Show the text, then wait for the slide time
-                    slideshowSequence.AppendCallback(() => sequenceTextField.SetText(slide.text));
-                    slideshowSequence.AppendInterval(slide.displayTimeMilliSecs / 1000F);
+                        // Stop music
+                        MusicManager.Instance.Stop();
 
-                    // Remove text and fade out
-                    slideshowSequence.AppendCallback(() => sequenceTextField.SetText(string.Empty));
-                    slideshowSequence.Append(sequenceImageRenderer.DOFade(0F, 1.0F));
+                        // Call complete event
+                        SequenceComplete?.Invoke();
+                    });
 
-                    // Wait for (around) 1 second?..
-                    slideshowSequence.AppendInterval(1.5F);
+                    // Play the built slideshow sequence.
+                    slideshowSequence.Play();
                 }
-
-                slideshowSequence.OnStart(() =>
-                {
-                    // Load BGM - I mean... If you're uh... ready?
-                    if (!slideshow.MusicFileName.Equals("NO_BGM", StringComparison.InvariantCultureIgnoreCase))
-                        MusicManager.Instance.Play(slideshow.MusicFileName, false);
-
-                    // Enable sequence objects
-                    sequenceImageRenderer.gameObject.SetActive(true);
-                    sequenceTextField.gameObject.SetActive(true);
-                });
-
-                slideshowSequence.OnComplete(() =>
-                {
-                    // Disable sequence objects
-                    sequenceImageRenderer.gameObject.SetActive(false);
-                    sequenceImageRenderer.texture = null;
-                    sequenceTextField.gameObject.SetActive(false);
-
-                    // Free slide show resources...
-                    slideshowImage?.Free();
-                    slideshowImage = null;
-
-                    // Stop music
-                    MusicManager.Instance.Stop();
-
-                    // Call complete event
-                    SequenceComplete?.Invoke();
-                });
-
-                // Play the built slideshow sequence.
-                slideshowSequence.Play();
                 break;
 
             case SoMSequenceMode.None:

@@ -32,11 +32,7 @@ public class MenuTitle : MenuBase
     public override void Initialize()
     {
         // Load the title background
-        string backgroundFile = $"{ResourceManager.ResourceRoot}\\DATA\\PICTURE\\{GameManager.Instance.ProjectData.titleBackgroundFile}";
-
-        if (!File.Exists(backgroundFile))
-            Logger.Warn($"Could not locate file: '{backgroundFile}'!");
-        else
+        if (ResourceManager.Find($"\\DATA\\PICTURE\\{GameManager.Instance.ProjectData.titleBackgroundFile}", out string backgroundFile))
         {
             // Attempt to load the background image and assign it to the background renderer
             try

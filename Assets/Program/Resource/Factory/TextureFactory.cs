@@ -22,10 +22,8 @@ public class TextureFactory : ResourceFactory<TextureResource>
             return name;
 
         // Lets create our absolute path now
-        string absolutePath = Path.Combine(ResourceManager.ResourceRoot, path);
-
-        if (!File.Exists(absolutePath))
-            throw new Exception($"Failed to import '{path}' located '{absolutePath}'!\nFile does not exist");
+        if (!File.Exists(path))
+            throw new Exception($"Failed to import '{path}'!\nFile does not exist");
 
         // Try to find a loader for this resource
         FormatHandler<TextureResource> handler = GetFormatHandler(Path.GetExtension(path)) ?? throw new Exception($"Couldn't find format handler for '{path}'!");
@@ -33,7 +31,7 @@ public class TextureFactory : ResourceFactory<TextureResource>
         // Create the stream we will use to load the file
         using (FileInputStream fis = new FileInputStream(path))
         {
-            LoadInternal(fis, handler, name, absolutePath);
+            LoadInternal(fis, handler, name, path);
         }
 
         return name;

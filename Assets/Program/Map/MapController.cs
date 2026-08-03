@@ -7,6 +7,7 @@ using Unity.Transforms;
 using Unity.Mathematics;
 using Unity.Physics;
 using Unity.Physics.Authoring;
+using System;
 
 public class MapController : MonoBehaviour
 {
@@ -52,7 +53,10 @@ public class MapController : MonoBehaviour
         mapData.Load(mapID);
 
         // Also load up the events for this map...
-        EventManager.Instance.LoadEventsFromFile($"{ResourceManager.ResourceRoot}\\DATA\\MAP\\{mapID:D2}.evt");
+        if (ResourceManager.Find($"DATA\\MAP\\{mapID:D2}.evt", out string foundEvtFile))
+            EventManager.Instance.LoadEventsFromFile(foundEvtFile);
+        else
+            throw new Exception("Failed to load EVT data");
 
         // Any data from the save file to override the loaded map with?..
 

@@ -157,7 +157,8 @@ public class SoMMapData : ScriptableObject
     /// </summary>
     public void Load(int mapID)
     {
-        LoadMPX($"{ResourceManager.ResourceRoot}\\DATA\\MAP\\{mapID:D2}.mpx");
+        if (ResourceManager.Find($"DATA\\MAP\\{mapID:D2}.mpx", out string foundMpxFile))
+            LoadMPX(foundMpxFile);
     }
 
     /// <summary>
@@ -501,7 +502,10 @@ public class SoMMapData : ScriptableObject
         for (int i = 0; i < mpxMaterials.Length; ++i)
         {
             // Load the texture resource...
-            ulong resourceName  = ResourceManager.Load<TextureResource>($"{ResourceManager.ResourceRoot}\\DATA\\MAP\\TEXTURE\\{textureData[i]}");
+            if (!ResourceManager.Find($"DATA\\MAP\\TEXTURE\\{textureData[i]}", out string foundMapTexture))
+                continue;
+
+            ulong resourceName  = ResourceManager.Load<TextureResource>(foundMapTexture);
             textureResources[i] = ResourceManager.Get<TextureResource>(resourceName);
 
             // Create a material using the texture (TO-DO: Optimize this later with a stripped down shader)
