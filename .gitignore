@@ -19,6 +19,9 @@
 /Tools/DebugTools/MDLSleuth/obj
 /Tools/DebugTools/MDLSleuth/bin
 /Tools/DebugTools/MDLSleuth/Properties/*
+/Tools/DebugTools/MDLCheckVDIFF/obj
+/Tools/DebugTools/MDLCheckVDIFF/bin
+/Tools/DebugTools/MDLCheckVDIFF/Properties/*
 
 # Apparently git also needs these explicity ignored...
 !/.gitattributes

@@ -54,7 +54,6 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
         //
         MDLHeader mdlHeader = fis.ReadStruct<MDLHeader>();
 
-
         //
         // MDL Static Data
         //
@@ -151,6 +150,15 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
         }
 
         //
+        // MDL Texture Data
+        //
+        if (mdlHeader.numInternalTexture > 0)
+        {
+            // Seek to start of texture data...
+            fis.SeekBegin(4 * (mdlHeader.meshDataSize + mdlHeader.vertexAnimDataSize + mdlHeader.skeletonAnimDataSize));
+        }
+
+        //
         // Pass #1 - Build Mesh Data
         //
         List<ModelMaterialDefinition> unityMaterialData = new List<ModelMaterialDefinition>();
@@ -177,11 +185,13 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
                 // Prepare...
                 MDLSVector vPosition, vNormal;
                 MDLColour vColour;
+                MDLTexcoord vTexcoord;
 
                 // Vertex 1
                 vPosition = objectContext.Vertices[mdlTriangle.VI0];
                 vNormal   = objectContext.Normals[mdlTriangle.NI0];
                 vColour   = objectContext.Colours[mdlTriangle.CI0];
+                vTexcoord = objectContext.Texcoords[mdlTriangle.TI0];
 
                 unityVertexData.Add(
                     new ModelStaticVertex
@@ -189,7 +199,7 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
                         position = new Vector3(vPosition.VX / 1024F, -vPosition.VY / 1024F, vPosition.VZ / 1024F),
                         normal   = ModelResource.PackNormal1010102(new Vector3(vNormal.VX / 4096F, -vNormal.VY / 4096F, vNormal.VZ / 4096F).normalized),
                         colour   = new Color32(vColour.R, vColour.G, vColour.B, vColour.A),
-                        texcoord = new Vector2(0F, 0F)
+                        texcoord = new Vector2(vTexcoord.U / 255F, vTexcoord.V / 255F)
                     });
 
                 unityIndexData.Add((ushort)(unityVertexData.Count - 1));
@@ -198,6 +208,7 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
                 vPosition = objectContext.Vertices[mdlTriangle.VI1];
                 vNormal   = objectContext.Normals[mdlTriangle.NI1];
                 vColour   = objectContext.Colours[mdlTriangle.CI1];
+                vTexcoord = objectContext.Texcoords[mdlTriangle.TI1];
 
                 unityVertexData.Add(
                     new ModelStaticVertex
@@ -205,7 +216,7 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
                         position = new Vector3(vPosition.VX / 1024F, -vPosition.VY / 1024F, vPosition.VZ / 1024F),
                         normal   = ModelResource.PackNormal1010102(new Vector3(vNormal.VX / 4096F, -vNormal.VY / 4096F, vNormal.VZ / 4096F).normalized),
                         colour   = new Color32(vColour.R, vColour.G, vColour.B, vColour.A),
-                        texcoord = new Vector2(0F, 0F)
+                        texcoord = new Vector2(vTexcoord.U / 255F, vTexcoord.V / 255F)
                     });
 
                 unityIndexData.Add((ushort)(unityVertexData.Count - 1));
@@ -214,6 +225,7 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
                 vPosition = objectContext.Vertices[mdlTriangle.VI2];
                 vNormal   = objectContext.Normals[mdlTriangle.NI2];
                 vColour   = objectContext.Colours[mdlTriangle.CI2];
+                vTexcoord = objectContext.Texcoords[mdlTriangle.TI2];
 
                 unityVertexData.Add(
                     new ModelStaticVertex
@@ -221,7 +233,7 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
                         position = new Vector3(vPosition.VX / 1024F, -vPosition.VY / 1024F, vPosition.VZ / 1024F),
                         normal   = ModelResource.PackNormal1010102(new Vector3(vNormal.VX / 4096F, -vNormal.VY / 4096F, vNormal.VZ / 4096F).normalized),
                         colour   = new Color32(vColour.R, vColour.G, vColour.B, vColour.A),
-                        texcoord = new Vector2(0F, 0F)
+                        texcoord = new Vector2(vTexcoord.U / 255F, vTexcoord.V / 255F)
                     });
 
                 unityIndexData.Add((ushort)(unityVertexData.Count - 1));

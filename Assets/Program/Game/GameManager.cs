@@ -13,6 +13,7 @@ public class GameManager : MonoBehaviour
     [field: SerializeField] public SoMProjectData ProjectData { get; private set; }
     [field: SerializeField] public SoMObjectData ObjectData { get; private set; }
     [field: SerializeField] public SoMLevelCurve LevelCurve { get; private set; }
+    [field: SerializeField] public RenderingStyle RenderStyle { get; private set; }
 
     [field: SerializeField] public InputActionAsset InputActions { get; private set; }
     [field: SerializeField] public MenuManager MenuManager { get; private set; }

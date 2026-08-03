@@ -155,18 +155,21 @@ public class MDOFormatHandler : FormatHandler<ModelResource>
                 // We must do conversion from F32 format to Color32...
                 MDOMaterial mdoMaterial = mdoMaterials[mergedMeshKey.Item3];
 
-                materialDefinition.colourAlbedo = new Color32(
-                    (byte)(255 * mdoMaterial.diffuseR),
-                    (byte)(255 * mdoMaterial.diffuseG),
-                    (byte)(255 * mdoMaterial.diffuseB),
-                    (byte)(255 * mdoMaterial.diffuseA)
-                    );
+                materialDefinition.colourAlbedo = 
+                    new Color(
+                        mdoMaterial.diffuseR, 
+                        mdoMaterial.diffuseG, 
+                        mdoMaterial.diffuseB, 
+                        mdoMaterial.diffuseA
+                        );
 
-                materialDefinition.colourEmissive = new Color32(
-                    (byte)(255 * mdoMaterial.emissiveR),
-                    (byte)(255 * mdoMaterial.emissiveG),
-                    (byte)(255 * mdoMaterial.emissiveB),
-                    255);   // emissive X is unused, or used for something else unknown...
+                materialDefinition.colourEmissive = 
+                    new Color(
+                        mdoMaterial.emissiveR * mdoMaterial.emissiveX,
+                        mdoMaterial.emissiveG * mdoMaterial.emissiveX,
+                        mdoMaterial.emissiveB * mdoMaterial.emissiveX,
+                        255
+                        );
             }
             else
             {

@@ -165,11 +165,8 @@ public class ModelResource : BaseResource<Mesh>
                         // Get the material definition
                         ModelMaterialDefinition materialDefinition = materialDefinitions[i];
 
-                        // TO-DO: For rendering styles - this path needs to come from a "render params" serialized object somewhere...
-                        string materialShaderType = "OpenSoM/Object (Texture, Lit, Simple)";
-
                         // Create material
-                        Material material = new Material(Shader.Find(materialShaderType));
+                        Material material = new Material(Shader.Find(GameManager.Instance.RenderStyle.ObjectStatic));
 
                         // Albedo Texture
                         if (materialDefinition.textureMode != ModelMaterialTextureMode.None)
@@ -215,22 +212,33 @@ public class ModelResource : BaseResource<Mesh>
                         // Albedo Colour Tint
                         material.SetColor("_BaseColor", materialDefinition.colourAlbedo);
 
-                        // TO-DO: Emissive Colour 
+                        // TO-DO: Emissive Colour  
                         material.SetColor("_EmissionColor", materialDefinition.colourEmissive);
 
                         // Blend Mode
                         switch (materialDefinition.blendMode)
                         {
                             case ModelMaterialBlendMode.Additive:
-                                material.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
+                                material.SetInt("_SrcBlend", (int)BlendMode.One);
                                 material.SetInt("_DstBlend", (int)BlendMode.One);
+                                material.SetInt("_SrcBlendAlpha", (int)BlendMode.Zero);
+                                material.SetInt("_DstBlendAlpha", (int)BlendMode.One);
+                                material.SetFloat("_FogMultiplier", 0F);
+
                                 material.renderQueue = (int)RenderQueue.Transparent;
                                 break;
 
                             case ModelMaterialBlendMode.Default:
                                 material.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
                                 material.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
-                                material.renderQueue = (int)RenderQueue.Transparent;
+                                material.SetInt("_SrcBlendAlpha", (int)BlendMode.One);
+                                material.SetInt("_DstBlendAlpha", (int)BlendMode.OneMinusSrcAlpha);
+                                material.SetFloat("_FogMultiplier", 1F);
+
+                                if (materialDefinition.colourAlbedo.a >= 1)
+                                    material.renderQueue = (int)RenderQueue.GeometryLast;
+                                else
+                                    material.renderQueue = (int)RenderQueue.Transparent;
                                 break;
                         }
 

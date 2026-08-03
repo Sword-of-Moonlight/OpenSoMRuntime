@@ -1,6 +1,6 @@
 //
 // OpenSoM Runtime Project Shader
-// Based on Universal Render Pipeline/Simple Lit
+// Extremely stripped back Universal Render Pipeline/Simple Lit
 //
 Shader "OpenSoM/Object (Texture, Lit, Simple)"
 {
@@ -10,15 +10,11 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
         [MainColor]   _BaseColor("Base Color", Color) = (1, 1, 1, 1)
         _EmissionColor("Emissive Color", Color) = (0, 0, 0, 0)
         _ScrollParams("Scroll Params", Vector) = (0, 0, 0, 0)
-
-        // This is bull shit required by the SRP batcher. I'd love to get rid of it.
-        _Surface("__surface", Float) = 0.0
-
-        // I want to optimize these out, but I'll be leaving it until later.
-        [HideInInspector] _SrcBlend("__src", Float) = 1.0
-        [HideInInspector] _DstBlend("__dst", Float) = 0.0
-        [HideInInspector] _SrcBlendAlpha("__srcA", Float) = 1.0
-        [HideInInspector] _DstBlendAlpha("__dstA", Float) = 0.0
+        _SrcBlend("__src", Float) = 1.0
+        _DstBlend("__dst", Float) = 0.0
+        _SrcBlendAlpha("__srcA", Float) = 1.0
+        _DstBlendAlpha("__dstA", Float) = 0.0
+        _FogMultiplier("__fogMult", Float) = 1.0
     }
 
     SubShader
@@ -113,49 +109,39 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
             float4 _BaseMap_ST;
             float4 _BaseMap_TexelSize;
             half4 _BaseColor;
-            half4 _SpecColor;
             half4 _EmissionColor;
-            half _Cutoff;
-            half _Surface;
             half4 _ScrollParams;
+            half _FogMultiplier;
             UNITY_TEXTURE_STREAMING_DEBUG_VARS;
             CBUFFER_END
 
-            #ifdef UNITY_DOTS_INSTANCING_ENABLED
+                #ifdef UNITY_DOTS_INSTANCING_ENABLED
                 UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
                 UNITY_DOTS_INSTANCED_PROP(float4, _BaseColor)
-                UNITY_DOTS_INSTANCED_PROP(float4, _SpecColor)
                 UNITY_DOTS_INSTANCED_PROP(float4, _EmissionColor)
-                UNITY_DOTS_INSTANCED_PROP(float, _Cutoff)
-                UNITY_DOTS_INSTANCED_PROP(float, _Surface)
                 UNITY_DOTS_INSTANCED_PROP(float4, _ScrollParams)
+                UNITY_DOTS_INSTANCED_PROP(float, _FogMultiplier);
                 UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
 
                 static float4 unity_DOTS_Sampled_BaseColor;
-                static float4 unity_DOTS_Sampled_SpecColor;
                 static float4 unity_DOTS_Sampled_EmissionColor;
-                static float  unity_DOTS_Sampled_Cutoff;
-                static float  unity_DOTS_Sampled_Surface;
                 static float4 unity_DOTS_Sampled_ScrollParams;
+                static float  unity_DOTS_Sampled_FogMultiplier;
 
                 void SetupDOTSSimpleLitMaterialPropertyCaches()
                 {
                     unity_DOTS_Sampled_BaseColor = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float4, _BaseColor);
-                    unity_DOTS_Sampled_SpecColor = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float4, _SpecColor);
                     unity_DOTS_Sampled_EmissionColor = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float4, _EmissionColor);
-                    unity_DOTS_Sampled_Cutoff = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float, _Cutoff);
-                    unity_DOTS_Sampled_Surface = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float, _Surface);
                     unity_DOTS_Sampled_ScrollParams = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float4, _ScrollParams);
+                    unity_DOTS_Sampled_FogMultiplier = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float, _FogMultiplier);
                 }
 
                 #undef UNITY_SETUP_DOTS_MATERIAL_PROPERTY_CACHES
                 #define UNITY_SETUP_DOTS_MATERIAL_PROPERTY_CACHES() SetupDOTSSimpleLitMaterialPropertyCaches()
                 #define _BaseColor          unity_DOTS_Sampled_BaseColor
-                #define _SpecColor          unity_DOTS_Sampled_SpecColor
                 #define _EmissionColor      unity_DOTS_Sampled_EmissionColor
-                #define _Cutoff             unity_DOTS_Sampled_Cutoff
-                #define _Surface            unity_DOTS_Sampled_Surface
                 #define _ScrollParams       unity_DOTS_Sampled_ScrollParams
+                #define _FogMultiplier      unity_DOTS_Sampled_FogMultiplier
             #endif
 
             // -------------------------------------
@@ -184,11 +170,11 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
                 half3  normalWS                : TEXCOORD2;
                 half4  colour                  : TEXCOORD3;
 
+                DECLARE_LIGHTMAP_OR_SH(staticLightmapUV, vertexSH, 7);
+
                 #if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR)
                     float4 shadowCoord             : TEXCOORD6;
                 #endif
-
-                DECLARE_LIGHTMAP_OR_SH(staticLightmapUV, vertexSH, 7);
 
                 #ifdef USE_APV_PROBE_OCCLUSION
                     float4 probeOcclusion : TEXCOORD9;
@@ -200,9 +186,7 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
-            //
-            // URP Simple Lit Vertex Function
-            //
+            // Helper to decode 10-10-10-02 encoded normals
             float3 Decode1010102(uint packed)
             {
                 int3 i;
@@ -215,6 +199,9 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
                 return normalize(n);
             }
 
+            //
+            // URP Simple Lit Vertex Function
+            //
             V2F LitPassVertexSimple(P2V input)
             {
                 V2F output = (V2F)0;
@@ -223,24 +210,29 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
                 UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_TRANSFER_INSTANCE_ID(input, output);
 
-                // Actual fucking transfer (NEEDS CLEAN UP)
-                VertexPositionInputs vertexInput = GetVertexPositionInputs(input.positionOS.xyz);
-                VertexNormalInputs normalInput   = GetVertexNormalInputs(Decode1010102(input.normalOS), float4(Decode1010102(input.tangentOS), 1.0));
+                // Transform the object space vertex into world space and clip space
+                float3 vertexWorldSpace = TransformObjectToWorld(input.positionOS.xyz);
+                float4 vertexClipSpace  = TransformWorldToHClip(vertexWorldSpace);
 
+                output.positionWS.xyz = vertexWorldSpace;
+                output.positionCS = vertexClipSpace;
+
+                // Transform the object space normal into world space
+                output.normalWS = TransformObjectToWorldNormal(Decode1010102(input.normalOS));
+
+                // UV Transformation by texture, additionally applying UV scroll
                 output.uv = TRANSFORM_TEX(input.texcoord, _BaseMap);
                 output.uv = output.uv + (_ScrollParams.xy * _ScrollParams.zw) * _Time.x;
 
-                output.positionWS.xyz = vertexInput.positionWS;
-                output.positionCS     = vertexInput.positionCS;
-
-                output.normalWS = NormalizeNormalPerVertex(normalInput.normalWS);
-
+                // Must normalise our colour...
                 output.colour = input.colour / 255.0;
 
-                OUTPUT_SH4(vertexInput.positionWS, output.normalWS.xyz, GetWorldSpaceNormalizeViewDir(vertexInput.positionWS), output.vertexSH, output.probeOcclusion);
-
                 #if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR)
-                    output.shadowCoord = GetShadowCoord(vertexInput);
+                    #if defined(_MAIN_LIGHT_SHADOWS_SCREEN) && !defined(_SURFACE_TYPE_TRANSPARENT)
+                        output.shadowCoord = ComputeScreenPos(vertexClipSpace);
+                    #else
+                        output.shadowCoord = TransformWorldToShadowCoord(vertexWorldSpace);
+                    #endif
                 #endif
 
                 return output;
@@ -250,16 +242,12 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
             // URP Simple Lit Fragment Function
             //
 
-            // Lambert
-            /*
-            half3 OpenSoMLightDiffuseFunc(half3 lightDirection, half3 viewDirection, half3 surfaceNormal)
+            half3 OpenSoMLambert(half3 lightDirection, half3 viewDirection, half3 surfaceNormal)
             {
                 return saturate(dot(surfaceNormal, lightDirection));
             }
-            */
 
-            // Minnaert
-            half3 OpenSoMLightDiffuseFunc(half3 lightDirection, half3 viewDirection, half3 surfaceNormal)
+            half3 OpenSoMMinnaert(half3 lightDirection, half3 viewDirection, half3 surfaceNormal)
             {
                 float NdotL         = saturate(dot(surfaceNormal, lightDirection));
                 float NdotV         = saturate(dot(surfaceNormal, viewDirection));
@@ -267,32 +255,29 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
 
                 return NdotL * pow(NdotV, minnaertPower);
             }
-
+            
             half3 OpenSoMBlinnPhong(Light light, half3 surfaceNormal, half3 viewDirection, half3 albedo)
             {
                 half3 attenuatedLightColor = light.color * (light.distanceAttenuation * light.shadowAttenuation);
                 
-                return attenuatedLightColor * OpenSoMLightDiffuseFunc(light.direction, viewDirection, surfaceNormal) * albedo;
+                return attenuatedLightColor * OpenSoMLambert(light.direction, viewDirection, surfaceNormal) * albedo;
             }
 
             half4 OpenSoMBlinnPhongFragment(InputData inputData, half3 albedo)
             {
                 // RealtimeLights>CalculateShadowMask
-                half4 shadowMask = half4(1.0, 1.0, 1.0, 1.0);    // This is 1,1,1,1 always - we can remove it...
+                half4 shadowMask = half4(1.0, 1.0, 1.0, 1.0);
 
                 // AmbientOcclusion>CreateAmbientOcclusionFactor
-                // Could potentially bring this inside, but I don't see the point currently...
                 AmbientOcclusionFactor aoFactor = CreateAmbientOcclusionFactor(inputData.normalizedScreenSpaceUV, 1.0);
                 
                 // RealtimeLights>GetMainLight
-                Light mainLight  = GetMainLight(inputData.shadowCoord, inputData.positionWS, shadowMask);
-                // mainLight.color *= aoFactor.directAmbientOcclusion;
+                Light mainLight = GetMainLight(inputData.shadowCoord, inputData.positionWS, shadowMask);
 
                 // Lighting>CreateLightingData
                 LightingData lightingData = (LightingData)0;
-                // lightingData.giColor               = (inputData.bakedGI * aoFactor.indirectAmbientOcclusion) * albedo;
                 lightingData.giColor               = inputData.bakedGI * albedo;
-                lightingData.emissionColor         = _EmissionColor.rgb; //half3(0.0, 0.0, 0.0);
+                lightingData.emissionColor         = _EmissionColor.rgb;
                 lightingData.vertexLightingColor   = 0;
                 lightingData.mainLightColor        = OpenSoMBlinnPhong(mainLight, inputData.normalWS, inputData.viewDirectionWS, albedo);
                 lightingData.additionalLightsColor = 0;
@@ -306,16 +291,12 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
                         {
                             CLUSTER_LIGHT_LOOP_SUBTRACTIVE_LIGHT_CHECK
                             Light light  = GetAdditionalLight(lightIndex, inputData.positionWS, shadowMask);
-                            // light.color *= aoFactor.directAmbientOcclusion;
-
                             lightingData.additionalLightsColor += OpenSoMBlinnPhong(light, inputData.normalWS, inputData.viewDirectionWS, albedo);
                         }
                     #endif
 
                     LIGHT_LOOP_BEGIN(pixelLightCount)
                         Light light  = GetAdditionalLight(lightIndex, inputData.positionWS, shadowMask);
-                        // light.color *= aoFactor.directAmbientOcclusion;
-
                         lightingData.additionalLightsColor += OpenSoMBlinnPhong(light, inputData.normalWS, inputData.viewDirectionWS, albedo);
                     LIGHT_LOOP_END
                 #endif
@@ -328,7 +309,7 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
                 UNITY_SETUP_INSTANCE_ID(input);
 
                 // Sample main texture - what is SampleAlbedoAlpha and what fuckery is it secretly doing?
-                half3 albedo = SampleAlbedoAlpha(input.uv, TEXTURE2D_ARGS(_BaseMap, sampler_BaseMap)).rgb;
+                half3 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv).rgb;
 
                 // Custom colour key logic... keys out any pixel with no channel above than 4 linear rgb steps
                 clip(max(albedo.r, max(albedo.g, albedo.b)) - 0.0003);
@@ -339,7 +320,7 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
                 // Copied from 'InitializeInputData' - Cleaner but still pathetic
                 InputData inputData       = (InputData)0;
                 inputData.positionWS      = input.positionWS;
-                inputData.normalWS        = NormalizeNormalPerPixel(input.normalWS);        
+                inputData.normalWS        = input.normalWS;        
                 inputData.viewDirectionWS = SafeNormalize(GetWorldSpaceNormalizeViewDir(inputData.positionWS));
 
                 // Sets the shadow map sampling coordinates
@@ -351,12 +332,10 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
                     inputData.shadowCoord = float4(0, 0, 0, 0);
                 #endif
 
-                // GetNormalizedScreenSpaceUV - not sure if we're even using this yet
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
 
                 // I believe this single function is responsible for all ambient lighting? Including shadow masking... Weird.
                 inputData.bakedGI    = SAMPLE_GI(input.staticLightmapUV, input.vertexSH, inputData.normalWS);
-                inputData.shadowMask = half4(1, 1, 1, 1);
 
                 // Apply Lighting (Extracted & cleaned up from Lighting>UniversalFragmentBlinnPhong)
                 half4 color = OpenSoMBlinnPhongFragment(inputData, albedo);
@@ -364,7 +343,7 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
                 // Apply Fog
                 half viewZ     = -(dot(UNITY_MATRIX_V[2].xyz, inputData.positionWS) + UNITY_MATRIX_V[2].w);
                 half fogFactor = saturate(mad(viewZ, unity_FogParams.z, unity_FogParams.w - _ProjectionParams.y * unity_FogParams.z));
-                color.rgb      = lerp(half3(unity_FogColor.rgb), color.rgb, fogFactor);
+                color.rgb      = lerp(lerp(color.rgb, half3(unity_FogColor.rgb), _FogMultiplier), color.rgb, fogFactor);
 
                 // Alpha is set to the base colour...
                 color.a = _BaseColor.a;
@@ -410,7 +389,14 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
             //--------------------------------------
             // GPU Instancing
             #pragma multi_compile_instancing
-            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DOTS.hlsl"
+            #ifndef HAVE_VFX_MODIFICATION
+                #pragma multi_compile _ DOTS_INSTANCING_ON
+                #if UNITY_PLATFORM_ANDROID || (UNITY_PLATFORM_WEBGL && !SHADER_API_WEBGPU) || UNITY_PLATFORM_UWP
+                    #pragma target 3.5 DOTS_INSTANCING_ON
+                #else
+                    #pragma target 4.5 DOTS_INSTANCING_ON
+                #endif
+            #endif // HAVE_VFX_MODIFICATION
 
             // This is used during shadow map generation to differentiate between directional and punctual light shadows, as they use different formulas to apply Normal Bias
             #pragma multi_compile_vertex _ _CASTING_PUNCTUAL_LIGHT_SHADOW
@@ -427,58 +413,45 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
                 float4 _BaseMap_ST;
                 float4 _BaseMap_TexelSize;
                 half4 _BaseColor;
-                half4 _SpecColor;
                 half4 _EmissionColor;
-                half _Cutoff;
-                half _Surface;
                 half4 _ScrollParams;
+                half _FogMultiplier;
                 UNITY_TEXTURE_STREAMING_DEBUG_VARS;
             CBUFFER_END
 
             #ifdef UNITY_DOTS_INSTANCING_ENABLED
                 UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
                 UNITY_DOTS_INSTANCED_PROP(float4, _BaseColor)
-                UNITY_DOTS_INSTANCED_PROP(float4, _SpecColor)
                 UNITY_DOTS_INSTANCED_PROP(float4, _EmissionColor)
-                UNITY_DOTS_INSTANCED_PROP(float, _Cutoff)
-                UNITY_DOTS_INSTANCED_PROP(float, _Surface)
                 UNITY_DOTS_INSTANCED_PROP(float4, _ScrollParams)
+                UNITY_DOTS_INSTANCED_PROP(float, _FogMultiplier);
                 UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
 
                 static float4 unity_DOTS_Sampled_BaseColor;
-                static float4 unity_DOTS_Sampled_SpecColor;
                 static float4 unity_DOTS_Sampled_EmissionColor;
-                static float  unity_DOTS_Sampled_Cutoff;
-                static float  unity_DOTS_Sampled_Surface;
                 static float4 unity_DOTS_Sampled_ScrollParams;
+                static float  unity_DOTS_Sampled_FogMultiplier;
 
                 void SetupDOTSSimpleLitMaterialPropertyCaches()
                 {
                     unity_DOTS_Sampled_BaseColor = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float4, _BaseColor);
-                    unity_DOTS_Sampled_SpecColor = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float4, _SpecColor);
                     unity_DOTS_Sampled_EmissionColor = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float4, _EmissionColor);
-                    unity_DOTS_Sampled_Cutoff = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float, _Cutoff);
-                    unity_DOTS_Sampled_Surface = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float, _Surface);
                     unity_DOTS_Sampled_ScrollParams = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float4, _ScrollParams);
+                    unity_DOTS_Sampled_FogMultiplier = UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(float, _FogMultiplier);
                 }
 
                 #undef UNITY_SETUP_DOTS_MATERIAL_PROPERTY_CACHES
                 #define UNITY_SETUP_DOTS_MATERIAL_PROPERTY_CACHES() SetupDOTSSimpleLitMaterialPropertyCaches()
                 #define _BaseColor          unity_DOTS_Sampled_BaseColor
-                #define _SpecColor          unity_DOTS_Sampled_SpecColor
                 #define _EmissionColor      unity_DOTS_Sampled_EmissionColor
-                #define _Cutoff             unity_DOTS_Sampled_Cutoff
-                #define _Surface            unity_DOTS_Sampled_Surface
                 #define _ScrollParams       unity_DOTS_Sampled_ScrollParams
+                #define _FogMultiplier      unity_DOTS_Sampled_FogMultiplier
             #endif
 
             //
             // From Shadow Caster Pass
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
-            #if defined(LOD_FADE_CROSSFADE)
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/LODCrossFade.hlsl"
-            #endif
 
             // Shadow Casting Light geometric parameters. These variables are used when applying the shadow Normal Bias and are set by UnityEngine.Rendering.Universal.ShadowUtils.SetupShadowCasterConstantBuffer in com.unity.render-pipelines.universal/Runtime/ShadowUtils.cs
             // For Directional lights, _LightDirection is used when applying shadow Normal Bias.
@@ -497,11 +470,8 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
 
             struct Varyings
             {
-                //#if defined(_ALPHATEST_ON)
-                    float2 uv       : TEXCOORD0;
-                //#endif
-
-                float4 positionCS   : SV_POSITION;
+                float4 positionCS : SV_POSITION;
+                float2 uv         : TEXCOORD0;
 
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
@@ -509,7 +479,7 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
             float4 GetShadowPositionHClip(Attributes input)
             {
                 float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
-                float3 normalWS = TransformObjectToWorldNormal(input.normalOS);
+                float3 normalWS   = TransformObjectToWorldNormal(input.normalOS);
 
                 #if _CASTING_PUNCTUAL_LIGHT_SHADOW
                     float3 lightDirectionWS = normalize(_LightPosition - positionWS);
@@ -528,11 +498,9 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
                 UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_TRANSFER_INSTANCE_ID(input, output);
 
-                //#if defined(_ALPHATEST_ON)
-                    output.uv = TRANSFORM_TEX(input.texcoord, _BaseMap);
-                //#endif
-
                 output.positionCS = GetShadowPositionHClip(input);
+                output.uv = TRANSFORM_TEX(input.texcoord, _BaseMap);
+
                 return output;
             }
 
@@ -540,191 +508,13 @@ Shader "OpenSoM/Object (Texture, Lit, Simple)"
             {
                 UNITY_SETUP_INSTANCE_ID(input);
 
-                //#if defined(_ALPHATEST_ON)
-                    //Alpha(SampleAlbedoAlpha(input.uv, TEXTURE2D_ARGS(_BaseMap, sampler_BaseMap)).a, _BaseColor, _Cutoff);
-                //#endif
-
                 // Custom colour key logic... keys out any pixel with no channel above than 4 linear rgb steps
-                half3 albedo = SampleAlbedoAlpha(input.uv, TEXTURE2D_ARGS(_BaseMap, sampler_BaseMap)).rgb;
+                half3 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv).rgb;
                 clip(max(albedo.r, max(albedo.g, albedo.b)) - 0.0003);
-
-                #if defined(LOD_FADE_CROSSFADE)
-                    LODFadeCrossFade(input.positionCS);
-                #endif
 
                 return 0;
             }
 
-            ENDHLSL
-        }
-
-        /*
-        Pass
-        {
-            Name "GBuffer"
-            Tags
-            {
-                "LightMode" = "UniversalGBuffer"
-            }
-
-            // -------------------------------------
-            // Render State Commands
-            ZWrite On
-            ZTest LEqual
-            Cull Back
-
-            HLSLPROGRAM
-            #pragma target 4.5
-
-            // Deferred Rendering Path does not support the OpenGL-based graphics API:
-            // Desktop OpenGL, OpenGL ES 3.0, WebGL 2.0.
-            #pragma exclude_renderers gles3 glcore
-
-            // -------------------------------------
-            // Shader Stages
-            #pragma vertex LitPassVertexSimple
-            #pragma fragment LitPassFragmentSimple
-
-            // -------------------------------------
-            // Material Keywords
-            #pragma shader_feature_local_fragment _ALPHATEST_ON
-            //#pragma shader_feature _ALPHAPREMULTIPLY_ON
-            #pragma shader_feature_local_fragment _ _SPECGLOSSMAP _SPECULAR_COLOR
-            #pragma shader_feature_local_fragment _GLOSSINESS_FROM_BASE_ALPHA
-            #pragma shader_feature_local _NORMALMAP
-            #pragma shader_feature_local_fragment _EMISSION
-            #pragma shader_feature_local _RECEIVE_SHADOWS_OFF
-
-            // -------------------------------------
-            // Universal Pipeline keywords
-            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
-            //#pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
-            //#pragma multi_compile _ _ADDITIONAL_LIGHT_SHADOWS
-            #pragma multi_compile_fragment _ _SHADOWS_SOFT
-            #pragma multi_compile_fragment _ _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
-            #pragma multi_compile_fragment _ _DBUFFER_MRT1 _DBUFFER_MRT2 _DBUFFER_MRT3
-            #pragma multi_compile _ EVALUATE_SH_MIXED EVALUATE_SH_VERTEX
-            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ProbeVolumeVariants.hlsl"
-            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RenderingLayers.hlsl"
-
-            // -------------------------------------
-            // Unity defined keywords
-            #pragma multi_compile _ DIRLIGHTMAP_COMBINED
-            #pragma multi_compile _ LIGHTMAP_ON
-            #pragma multi_compile_fragment _ LIGHTMAP_BICUBIC_SAMPLING
-            #pragma multi_compile_fragment _ REFLECTION_PROBE_ROTATION
-            #pragma multi_compile _ DYNAMICLIGHTMAP_ON
-            #pragma multi_compile _ LIGHTMAP_SHADOW_MIXING
-            #pragma multi_compile _ SHADOWS_SHADOWMASK
-            #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
-            #pragma multi_compile_fragment _ _RENDER_PASS_ENABLED
-            #pragma multi_compile _ LOD_FADE_CROSSFADE
-            #pragma multi_compile_fragment _ _SCREEN_SPACE_IRRADIANCE
-
-            //--------------------------------------
-            // GPU Instancing
-            #pragma multi_compile_instancing
-            #pragma instancing_options renderinglayer
-            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DOTS.hlsl"
-
-            //--------------------------------------
-            // Defines
-            #define BUMP_SCALE_NOT_SUPPORTED 1
-
-            // -------------------------------------
-            // Includes
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/SimpleLitInput.hlsl"
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/SimpleLitGBufferPass.hlsl"
-            ENDHLSL
-        }
-        */
-
-        Pass
-        {
-            Name "DepthOnly"
-            Tags
-            {
-                "LightMode" = "DepthOnly"
-            }
-
-            // -------------------------------------
-            // Render State Commands
-            ZWrite On
-            ColorMask R
-            Cull Back
-
-            HLSLPROGRAM
-            #pragma target 2.0
-
-            // -------------------------------------
-            // Shader Stages
-            #pragma vertex DepthOnlyVertex
-            #pragma fragment DepthOnlyFragment
-
-            // -------------------------------------
-            // Material Keywords
-            #pragma shader_feature_local _ALPHATEST_ON
-            #pragma shader_feature_local_fragment _GLOSSINESS_FROM_BASE_ALPHA
-
-            // -------------------------------------
-            // Unity defined keywords
-            #pragma multi_compile _ LOD_FADE_CROSSFADE
-
-            //--------------------------------------
-            // GPU Instancing
-            #pragma multi_compile_instancing
-            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DOTS.hlsl"
-
-            // -------------------------------------
-            // Includes
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/SimpleLitInput.hlsl"
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/DepthOnlyPass.hlsl"
-            ENDHLSL
-        }
-
-        Pass
-        {
-            Name "DepthNormals"
-            Tags
-            {
-                "LightMode" = "DepthNormals"
-            }
-
-            // -------------------------------------
-            // Render State Commands
-            ZWrite On
-            Cull Back
-
-            HLSLPROGRAM
-            #pragma target 2.0
-
-            // -------------------------------------
-            // Shader Stages
-            #pragma vertex DepthNormalsVertex
-            #pragma fragment DepthNormalsFragment
-
-            // -------------------------------------
-            // Material Keywords
-            #pragma shader_feature_local _NORMALMAP
-            #pragma shader_feature_local _ALPHATEST_ON
-            #pragma shader_feature_local_fragment _GLOSSINESS_FROM_BASE_ALPHA
-
-            // -------------------------------------
-            // Unity defined keywords
-            #pragma multi_compile _ LOD_FADE_CROSSFADE
-
-            // Universal Pipeline keywords
-            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RenderingLayers.hlsl"
-
-            //--------------------------------------
-            // GPU Instancing
-            #pragma multi_compile_instancing
-            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DOTS.hlsl"
-
-            // -------------------------------------
-            // Includes
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/SimpleLitInput.hlsl"
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/SimpleLitDepthNormalsPass.hlsl"
             ENDHLSL
         }
     }
