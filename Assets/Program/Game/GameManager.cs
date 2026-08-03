@@ -1,4 +1,5 @@
 ﻿using DG.Tweening;
+using System;
 using System.IO;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -88,6 +89,11 @@ public class GameManager : MonoBehaviour
     /// </summary>
     void SetupRuntimeEnviroment()
     {
+        // Testing Grabbing CMD for SOM-DB replacement support
+        foreach (string arg in Environment.GetCommandLineArgs())
+            Logger.Info($"CMD ARG = {arg}");
+
+
         if (MultiGameMode)
         {
             ProjectPath = Path.Combine(Path.GetFullPath(Application.streamingAssetsPath), $"GameData_{MultiGameName}");
