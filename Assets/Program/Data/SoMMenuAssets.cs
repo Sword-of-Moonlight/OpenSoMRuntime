@@ -203,13 +203,16 @@ public class SoMMenuAssets : ScriptableObject
             // Get frame texture resource
             resourceName     = ResourceManager.Load<TextureResource>(foundFrameTexture);
             menuFrameTexture = ResourceManager.Get<TextureResource>(resourceName);
-
+            
             // Grab our sprites from the frame texture
             Texture2D frameUnityTexture = menuFrameTexture.Get();
 
+            if (menuFrameTexture.height != 256)
+                frameUnityTexture.Reinitialize(256, 256);
+
             // Helper function for creating sprites for the frame
             Sprite CreateFrameSprite(Texture2D baseTexture, Vector2 XY, Vector2 WH, Vector4 border) =>
-                Sprite.Create(baseTexture, new Rect(XY, WH), new Vector2(.5F, .5F), 100F, 0, SpriteMeshType.Tight, border, false);
+            Sprite.Create(baseTexture, new Rect(XY, WH), new Vector2(.5F, .5F), 100F, 0, SpriteMeshType.Tight, border, false);
 
             // Create sprite definitions of the texture
             FrameBorderSprite       = CreateFrameSprite(frameUnityTexture, new Vector2(0, 136),   new Vector2(120, 120), new Vector4(40, 40, 40, 40));
