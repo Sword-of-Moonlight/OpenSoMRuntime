@@ -6,7 +6,6 @@ using Unity.Rendering;
 using Unity.Transforms;
 using Unity.Mathematics;
 using Unity.Physics;
-using Unity.Physics.Authoring;
 using System;
 
 public class MapController : MonoBehaviour
@@ -20,11 +19,13 @@ public class MapController : MonoBehaviour
     [SerializeField] Light directionalLightC;
     [SerializeField] BaseSky skyObject;
 
-    [Header("Configuration")]
-    [SerializeField] bool enableDirectionalLightShadows;
-
     // Properties
     public bool IsMapExited { get; private set; } = true;
+
+    // ECS Archetypes    
+    EntityArchetype ArchetypeObjectRoot, ArchetypeObjectMesh;
+    EntityArchetype ArchetypeTileRoot, ArchetypeTileMesh;
+    bool archetypesAreInitialized = false;
 
     /// <summary>Singleton Instance.</summary>
     public static MapController Instance { get; private set; }
@@ -39,6 +40,9 @@ public class MapController : MonoBehaviour
             throw new DuplicateSingletonException();
 
         Instance = this;
+
+        // ECS archetype construction...
+        InitializeArchetypes();
     }
 
     /// <summary>
@@ -79,6 +83,86 @@ public class MapController : MonoBehaviour
     }
 
     /// <summary>
+    /// Call to exit the map.
+    /// </summary>
+    public void ExitMap()
+    {
+        IsMapExited = true;
+    }
+
+    /// <summary>
+    /// Initializes all ECS archetypes for map loading
+    /// </summary>
+    void InitializeArchetypes()
+    {
+        if (archetypesAreInitialized)
+            return;
+
+        // Get the entity manager
+        EntityManager entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
+
+        // Tile Archetypes
+        ArchetypeTileRoot = entityManager.CreateArchetype(
+            typeof(LocalTransform),
+            typeof(LocalToWorld),
+            typeof(LinkedEntityGroup)
+            );
+
+        ArchetypeTileMesh = entityManager.CreateArchetype(
+            typeof(Parent),
+            typeof(Static),
+            typeof(LocalTransform),
+            typeof(LocalToWorld),
+            typeof(PerInstanceCullingTag),
+            typeof(WorldToLocal_Tag),
+            typeof(DepthSorted_Tag),
+            typeof(RenderBounds),
+            typeof(RenderMeshArray),
+            typeof(RenderFilterSettings),
+            typeof(MaterialMeshInfo),
+            typeof(WorldRenderBounds),
+            typeof(PhysicsCollider),
+            typeof(PhysicsWorldIndex)
+            );
+
+        // FX Archetypes
+        // TO-DO
+
+        // Object Archetypes
+        ArchetypeObjectRoot = entityManager.CreateArchetype(
+            typeof(LocalTransform),
+            typeof(LocalToWorld),
+            typeof(LinkedEntityGroup),
+            typeof(RuntimeMapObject)
+            );
+
+        ArchetypeObjectMesh = entityManager.CreateArchetype(
+            typeof(Parent),
+            typeof(LocalTransform),
+            typeof(LocalToWorld),
+            typeof(PerInstanceCullingTag),
+            typeof(WorldToLocal_Tag),
+            typeof(DepthSorted_Tag),
+            typeof(RenderBounds),
+            typeof(RenderMeshArray),
+            typeof(RenderFilterSettings),
+            typeof(MaterialMeshInfo),
+            typeof(WorldRenderBounds)
+            );
+
+        // Item Archetypes
+        // TO-DO
+
+        // Enemy Archetypes
+        // TO-DO
+
+        // NPC Archetypes
+        // TO-DO
+
+        archetypesAreInitialized = true;
+    }
+
+    /// <summary>
     /// Sets up the map enviroment, including fog, lighting and sky
     /// </summary>
     void SetupMapEnviroment()
@@ -116,11 +200,10 @@ public class MapController : MonoBehaviour
             target.transform.eulerAngles = direction * Mathf.Rad2Deg;
 
             // Colour
-            // ^ Slightly off. I can't get an exact match to what is baked (ambient is seemingly always too strong)
             target.color = colour;
 
             // Shadow settings
-            target.shadows = enableDirectionalLightShadows switch
+            target.shadows = GameManager.Instance.RenderStyle.EnableRealTimeShadows switch
             {
                 false => LightShadows.None,
                 true  => LightShadows.Hard
@@ -203,34 +286,15 @@ public class MapController : MonoBehaviour
         // Get the entity manager
         EntityManager entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
 
-        // Create map tile archetype
-        EntityArchetype tileEntityArchetype = entityManager.CreateArchetype(
-            typeof(PerInstanceCullingTag),
-            typeof(WorldToLocal_Tag),
-            typeof(DepthSorted_Tag),
-            typeof(Static),
-
-            typeof(LocalToWorld),
-            typeof(RenderBounds),
-            typeof(RenderMeshArray),
-            typeof(RenderFilterSettings),
-            typeof(MaterialMeshInfo),
-
-            typeof(WorldRenderBounds),
-
-            typeof(PhysicsCollider),
-            typeof(PhysicsWorldIndex)
-        );
-
         // Mesh filter settings will stay the same for each tile, so set them up now
         RenderFilterSettings tileEntityRenderFilterSettings = new RenderFilterSettings
         {
             MotionMode         = MotionVectorGenerationMode.ForceNoMotion,
             Layer              = 0,
-            ReceiveShadows     = enableDirectionalLightShadows,
-            ShadowCastingMode  = enableDirectionalLightShadows ? ShadowCastingMode.TwoSided : ShadowCastingMode.Off,
+            ReceiveShadows     = GameManager.Instance.RenderStyle.EnableRealTimeShadows,
+            ShadowCastingMode  = GameManager.Instance.RenderStyle.EnableRealTimeShadows ? ShadowCastingMode.TwoSided : ShadowCastingMode.Off,
             RenderingLayerMask = 1,
-            StaticShadowCaster = false
+            StaticShadowCaster = true & GameManager.Instance.RenderStyle.EnableRealTimeShadows
         };
 
         // We're using one global render mesh array with all unique tiles contained
@@ -256,24 +320,37 @@ public class MapController : MonoBehaviour
                 quaternion.RotateY(mapTile.rotation)
             );
 
-            float4x4 transformMatrix = tileMeshTransform.ToMatrix();
-
             // We need one entity per sub mesh sadly...
             Mesh unityMesh = mapData.RenderMeshes[mapTile.meshID];
-            
+
+            // Create the root tile entity
+            Entity tileRootEntity = entityManager.CreateEntity(ArchetypeTileRoot);
+            entityManager.SetComponentData(tileRootEntity, tileMeshTransform);
+
+            // Entity linking group allows us to tie the root to the meshes contained
+            entityManager.GetBuffer<LinkedEntityGroup>(tileRootEntity).Add(tileRootEntity);
+
+            // Now we may create each submesh for the tile
             for (int j = 0; j < unityMesh.subMeshCount; ++j)
             {
-                // Create Entity...
-                Entity tileEntity = entityManager.CreateEntity(tileEntityArchetype);
+                Entity meshEntity = entityManager.CreateEntity(ArchetypeTileMesh);
 
-                entityManager.SetComponentData(tileEntity, new LocalToWorld { Value = transformMatrix });         
-                entityManager.SetComponentData(tileEntity, new RenderBounds { Value = unityMesh.GetSubMesh(j).bounds.ToAABB() });
-                entityManager.SetSharedComponentManaged(tileEntity, tileMeshData);
-                entityManager.SetSharedComponent(tileEntity, tileEntityRenderFilterSettings);
-                entityManager.SetComponentData(tileEntity, MaterialMeshInfo.FromRenderMeshArrayIndices(mapTile.materialIDs[j], mapTile.meshID, (ushort)j));
-                
+                // Link the hierarchy
+                entityManager.SetComponentData(meshEntity, new Parent { Value = tileRootEntity });
+                entityManager.SetComponentData(meshEntity, LocalTransform.Identity);
+
+                // Setup rendering components 
+                entityManager.SetComponentData(meshEntity, new RenderBounds { Value = unityMesh.GetSubMesh(j).bounds.ToAABB() });
+                entityManager.SetSharedComponentManaged(meshEntity, tileMeshData);
+                entityManager.SetSharedComponent(meshEntity, tileEntityRenderFilterSettings);
+                entityManager.SetComponentData(meshEntity, MaterialMeshInfo.FromRenderMeshArrayIndices(mapTile.materialIDs[j], mapTile.meshID, (ushort)j));
+
+                // Setup collision components 
                 if (mapTile.colliderID >= 0)
-                    entityManager.SetComponentData(tileEntity, new PhysicsCollider { Value = mapData.CollisionMeshes[mapTile.colliderID] });
+                    entityManager.SetComponentData(meshEntity, new PhysicsCollider { Value = mapData.CollisionMeshes[mapTile.colliderID] });
+
+                // Add the child to the root's LinkedEntityGroup so it gets culled together
+                entityManager.GetBuffer<LinkedEntityGroup>(tileRootEntity).Add(meshEntity);
             }
         }
     }
@@ -286,37 +363,13 @@ public class MapController : MonoBehaviour
         // Get the entity manager
         EntityManager entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
 
-        // Create the object root archetype
-        EntityArchetype objectRootArchetype = entityManager.CreateArchetype(
-            typeof(LocalTransform),
-            typeof(LocalToWorld),
-            typeof(LinkedEntityGroup),
-            typeof(RuntimeMapObject)
-            );
-
-        // Create the object mesh archetype
-        EntityArchetype objectMeshArchetype = entityManager.CreateArchetype(
-            typeof(Parent),
-            typeof(LocalTransform),
-            typeof(LocalToWorld),
-
-            typeof(PerInstanceCullingTag),
-            typeof(WorldToLocal_Tag),
-            typeof(DepthSorted_Tag),
-            typeof(RenderBounds),
-            typeof(RenderMeshArray),
-            typeof(RenderFilterSettings),
-            typeof(MaterialMeshInfo),
-            typeof(WorldRenderBounds)
-            );
-
         // Mesh filter settings will stay the same for each tile, so set them up now
         RenderFilterSettings objectRenderFilterSettings = new RenderFilterSettings
         {
             MotionMode          = MotionVectorGenerationMode.ForceNoMotion,
             Layer               = 0,
-            ReceiveShadows      = enableDirectionalLightShadows,
-            ShadowCastingMode   = enableDirectionalLightShadows ? ShadowCastingMode.On : ShadowCastingMode.Off,
+            ReceiveShadows      = GameManager.Instance.RenderStyle.EnableRealTimeShadows,
+            ShadowCastingMode   = GameManager.Instance.RenderStyle.EnableRealTimeShadows ? ShadowCastingMode.On : ShadowCastingMode.Off,
             RenderingLayerMask  = 1,
             StaticShadowCaster  = false
         };
@@ -347,7 +400,7 @@ public class MapController : MonoBehaviour
             );
 
             // We must now create the root entity that we will store our meshes
-            Entity objectRootEntity = entityManager.CreateEntity(objectRootArchetype);
+            Entity objectRootEntity = entityManager.CreateEntity(ArchetypeObjectRoot);
             entityManager.SetComponentData(objectRootEntity, objLocalTransform);
 
             // Entity linking group allows us to tie the root to the meshes contained
@@ -356,7 +409,7 @@ public class MapController : MonoBehaviour
             // Now we may create each submesh for the object...
             for (int j = 0; j < unityMesh.subMeshCount; ++j)
             {
-                Entity meshEntity = entityManager.CreateEntity(objectMeshArchetype);
+                Entity meshEntity = entityManager.CreateEntity(ArchetypeObjectMesh);
 
                 // Link the hierarchy
                 entityManager.SetComponentData(meshEntity, new Parent { Value = objectRootEntity });
@@ -376,9 +429,6 @@ public class MapController : MonoBehaviour
             entityManager.SetComponentData(objectRootEntity,
                 new RuntimeMapObject
                 {
-                    // We must calculate in a special cull value which includes the AABB
-                    CullDistanceSq = (mapData.CameraZFar * mapData.CameraZFar) + Vector3.SqrMagnitude(unityMesh.bounds.center - unityMesh.bounds.max),
-                    
                     // The visible flag is set by the user and must be accounted for
                     Visible        = worldObject.visible == 1
                 });
@@ -390,12 +440,4 @@ public class MapController : MonoBehaviour
     /// </summary>
     void SetupMapMusic() =>
         MusicManager.Instance.Play(mapData.MusicFileName, true);
-
-    /// <summary>
-    /// Call to exit the map.
-    /// </summary>
-    public void ExitMap()
-    {
-        IsMapExited = true;
-    }
 }
