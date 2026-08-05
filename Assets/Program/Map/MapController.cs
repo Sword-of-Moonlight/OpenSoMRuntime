@@ -23,8 +23,11 @@ public class MapController : MonoBehaviour
     public bool IsMapExited { get; private set; } = true;
 
     // ECS Archetypes    
+    RenderFilterSettings ObjectRenderSettings;
     EntityArchetype ArchetypeObjectRoot, ArchetypeObjectMesh;
     EntityArchetype ArchetypeTileRoot, ArchetypeTileMesh;
+    EntityArchetype ArchetypeChild;
+
     bool archetypesAreInitialized = false;
 
     /// <summary>Singleton Instance.</summary>
@@ -129,6 +132,16 @@ public class MapController : MonoBehaviour
         // TO-DO
 
         // Object Archetypes
+        ObjectRenderSettings = new RenderFilterSettings
+        {
+            MotionMode         = MotionVectorGenerationMode.ForceNoMotion,
+            Layer              = 0,
+            ReceiveShadows     = GameManager.Instance.RenderStyle.EnableRealTimeShadows,
+            ShadowCastingMode  = GameManager.Instance.RenderStyle.EnableRealTimeShadows ? ShadowCastingMode.On : ShadowCastingMode.Off,
+            RenderingLayerMask = 1,
+            StaticShadowCaster = false
+        };
+
         ArchetypeObjectRoot = entityManager.CreateArchetype(
             typeof(LocalTransform),
             typeof(LocalToWorld),
@@ -158,6 +171,13 @@ public class MapController : MonoBehaviour
 
         // NPC Archetypes
         // TO-DO
+
+        // Generic reusable archetypes
+        ArchetypeChild = entityManager.CreateArchetype(
+            typeof(Parent),
+            typeof(LocalTransform),
+            typeof(LocalToWorld)
+            );
 
         archetypesAreInitialized = true;
     }
@@ -360,78 +380,111 @@ public class MapController : MonoBehaviour
     /// </summary>
     void SetupMapObjects()
     {
-        // Get the entity manager
         EntityManager entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
 
-        // Mesh filter settings will stay the same for each tile, so set them up now
-        RenderFilterSettings objectRenderFilterSettings = new RenderFilterSettings
-        {
-            MotionMode          = MotionVectorGenerationMode.ForceNoMotion,
-            Layer               = 0,
-            ReceiveShadows      = GameManager.Instance.RenderStyle.EnableRealTimeShadows,
-            ShadowCastingMode   = GameManager.Instance.RenderStyle.EnableRealTimeShadows ? ShadowCastingMode.On : ShadowCastingMode.Off,
-            RenderingLayerMask  = 1,
-            StaticShadowCaster  = false
-        };
-
-        // Spawn entities for each object
         for (int i = 0; i < mapData.WorldObjects.Length; ++i)
         {
             // Get an object from our world object data
-            SoMMapData.MPXObject worldObject = mapData.WorldObjects[i];
+            MPXObject mpxObject = mapData.WorldObjects[i];
 
-            // Skip empty delcarations
-            if (worldObject.declarationID == -1)
+            // We want to avoid invalid declarations...
+            if (mpxObject.declarationID == -1)
                 continue;
 
-            // We can now get object data from the registry, and it's model data.
-            if (!GameManager.Instance.ObjectData.GetObjectData(worldObject.declarationID, out SoMObjectProfile objProf, out SoMObjectParameter objParam, out ModelResource objModel))
-                continue;
+            SpawnObject(entityManager, mpxObject, i);
+        }
+    }
 
-            // We must now get the mesh from our model resource
-            Mesh unityMesh = objModel.Get();
+    /// <summary>
+    /// Spawns a single map object
+    /// </summary>
+    void SpawnObject(EntityManager entityManager, MPXObject mpxObject, int index)
+    {
+        // Get object data
+        if (!GameManager.Instance.ObjectData.GetObjectData(mpxObject.declarationID, out SoMObjectProfile profile, out SoMObjectParameter parameter, out ModelResource model))
+            return;
 
-            // We can now construct the render mesh array and object initial transform
-            RenderMeshArray objRenderMeshArray = new RenderMeshArray(objModel.Materials, new Mesh[] { unityMesh });
-            LocalTransform objLocalTransform   = LocalTransform.FromPositionRotationScale(
-                new float3(worldObject.position.x, worldObject.position.y, worldObject.position.z),
-                quaternion.Euler(new float3(-worldObject.rotation.x, -worldObject.rotation.y, -worldObject.rotation.z), math.RotationOrder.ZXY),
-                objParam.scale * worldObject.scale
-            );
+        // Set up mesh data for the object
+        Mesh mesh = model.Get();
+        RenderMeshArray renderMeshArray = new RenderMeshArray(model.Materials, new Mesh[] { mesh });
 
-            // We must now create the root entity that we will store our meshes
-            Entity objectRootEntity = entityManager.CreateEntity(ArchetypeObjectRoot);
-            entityManager.SetComponentData(objectRootEntity, objLocalTransform);
+        // Build the object transform
+        LocalTransform localTransform = LocalTransform.FromPositionRotationScale(
+            mpxObject.position, 
+            quaternion.Euler(-mpxObject.rotation, math.RotationOrder.ZXY),
+            parameter.scale * mpxObject.scale
+        );
 
-            // Entity linking group allows us to tie the root to the meshes contained
-            entityManager.GetBuffer<LinkedEntityGroup>(objectRootEntity).Add(objectRootEntity);
+        // Create root entity
+        Entity objectRootEntity = entityManager.CreateEntity(ArchetypeObjectRoot);
+        entityManager.SetComponentData(objectRootEntity, localTransform);
+        entityManager.GetBuffer<LinkedEntityGroup>(objectRootEntity).Add(objectRootEntity);
 
-            // Now we may create each submesh for the object...
-            for (int j = 0; j < unityMesh.subMeshCount; ++j)
+        // Store runtime object data on the root entity
+        entityManager.SetComponentData(objectRootEntity,
+            new RuntimeMapObject
             {
-                Entity meshEntity = entityManager.CreateEntity(ArchetypeObjectMesh);
+                // The visible flag is set by the user and must be accounted for
+                Visible = mpxObject.visible == 1
+            });
 
-                // Link the hierarchy
-                entityManager.SetComponentData(meshEntity, new Parent { Value = objectRootEntity });
-                entityManager.SetComponentData(meshEntity, LocalTransform.Identity);
+        // Depending on the object type, additional entities may be required.
+        switch (profile.objectClass)
+        {
+            case SoMObjectClass.Light:
+                // Don't bother with range 0 lights, I'm not convinced they do anything...
+                if (mpxObject.flags.lightFlags.range <= 0)
+                    break;
 
-                // Setup rendering components
-                entityManager.SetComponentData(meshEntity, new RenderBounds { Value = unityMesh.GetSubMesh(j).bounds.ToAABB() });
-                entityManager.SetSharedComponentManaged(meshEntity, objRenderMeshArray);
-                entityManager.SetSharedComponent(meshEntity, objectRenderFilterSettings);
-                entityManager.SetComponentData(meshEntity, MaterialMeshInfo.FromRenderMeshArrayIndices(objModel.MeshMaterialMapping[j], 0, (ushort)j));
+                // We must create a game object for the light
+                GameObject lightObject = new GameObject($"OBJ {index:D4} LIGHT");
+                Light light = lightObject.AddComponent<Light>();
+
+                // position itself needs setting...
+                float3 controlPointPosition = (model.ControlPoints[0] * localTransform.Scale);
+                lightObject.transform.position = localTransform.Position + controlPointPosition;
+
+                // Configure as a Point Light
+                light.type = LightType.Point;
+                light.color = new Color32(
+                    (byte)((mpxObject.flags.lightFlags.colour >> 00) & 0xFF),
+                    (byte)((mpxObject.flags.lightFlags.colour >> 08) & 0xFF),
+                    (byte)((mpxObject.flags.lightFlags.colour >> 16) & 0xFF),
+                    255
+                    );
+
+                light.range   = (2F * mpxObject.flags.lightFlags.range);
+                light.shadows = LightShadows.None;
+
+                // Create child entity for light syncing
+                Entity lightEntity = entityManager.CreateEntity(ArchetypeChild);
+
+                entityManager.AddComponentObject(lightEntity, light);
+                entityManager.SetComponentData(lightEntity, LocalTransform.FromPosition(controlPointPosition));
+                entityManager.SetComponentData(lightEntity, new Parent { Value = objectRootEntity });
 
                 // Add the child to the root's LinkedEntityGroup so it gets culled together
-                entityManager.GetBuffer<LinkedEntityGroup>(objectRootEntity).Add(meshEntity);
-            }
+                entityManager.GetBuffer<LinkedEntityGroup>(objectRootEntity).Add(lightEntity);
+                break;
+        }
 
-            // We finally set our object data on the root
-            entityManager.SetComponentData(objectRootEntity,
-                new RuntimeMapObject
-                {
-                    // The visible flag is set by the user and must be accounted for
-                    Visible        = worldObject.visible == 1
-                });
+        // We now must create an entity for each sub mesh...
+        for (int i = 0; i < mesh.subMeshCount; ++i)
+        {
+            Entity meshEntity = entityManager.CreateEntity(ArchetypeObjectMesh);
+
+            // Link the hierarchy
+            entityManager.SetComponentData(meshEntity, new Parent { Value = objectRootEntity });
+            entityManager.SetComponentData(meshEntity, LocalTransform.Identity);
+
+            // Setup rendering components
+            entityManager.SetComponentData(meshEntity, new RenderBounds { Value = mesh.GetSubMesh(i).bounds.ToAABB() });
+            entityManager.SetSharedComponentManaged(meshEntity, renderMeshArray);
+            entityManager.SetSharedComponent(meshEntity, ObjectRenderSettings);
+            entityManager.SetComponentData(meshEntity, MaterialMeshInfo.FromRenderMeshArrayIndices(model.MeshMaterialMapping[i], 0, (ushort)i));
+
+            // Add the child to the root's LinkedEntityGroup so it gets culled together
+            entityManager.GetBuffer<LinkedEntityGroup>(objectRootEntity).Add(meshEntity);
         }
     }
 

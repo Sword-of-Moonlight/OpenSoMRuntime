@@ -21,6 +21,9 @@ public class ModelResource : BaseResource<Mesh>
     /// <summary>Default materials. Not avaliable if "CreateDefaultMaterials" is set to false when loading.</summary>
     public Material[] Materials { get; private set; }
 
+    /// <summary>Control Points</summary>
+    public Vector3[] ControlPoints { get; private set; }
+
     /// <summary>
     /// Default mapping of meshes to materials.
     /// </summary>
@@ -33,6 +36,15 @@ public class ModelResource : BaseResource<Mesh>
 
     ModelMeshDefinition[] meshDefinitions;          // Mesh Definition Data
     ModelMaterialDefinition[] materialDefinitions;  // Material Definition Data
+
+
+    /// <summary>
+    /// Call to load control point data
+    /// </summary>
+    public void LoadControlPoints(Vector3[] controlPoints)
+    {
+        ControlPoints = controlPoints;
+    }
 
     /// <summary>
     /// Call to load vertex data

@@ -222,6 +222,7 @@ public class MDOFormatHandler : FormatHandler<ModelResource>
         //
         // Loading data into the resource
         //
+        resource.LoadControlPoints(mdoControlPoints);
         resource.LoadStaticVertexData(unityVertexData.ToArray());
         resource.LoadIndexData(unityIndexData.ToArray());
         resource.LoadMaterialDefinitions(unityMaterialData.ToArray());

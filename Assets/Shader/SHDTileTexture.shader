@@ -235,81 +235,138 @@ Shader "OpenSoM/Tile (Texture, Lit, Simple)"
                 return output;
             }
 
-            //
-            // URP Simple Lit Fragment Function
-            //
-
-            // Lambert
             /*
             half3 OpenSoMLightDiffuseFunc(half3 lightDirection, half3 viewDirection, half3 surfaceNormal)
             {
-                return saturate(dot(surfaceNormal, lightDirection));
-            }
-            */
-
-            // Minnaert
-            half3 OpenSoMLightDiffuseFunc(half3 lightDirection, half3 viewDirection, half3 surfaceNormal)
-            {
-                float NdotL         = saturate(dot(surfaceNormal, lightDirection));
-                float NdotV         = saturate(dot(surfaceNormal, viewDirection));
+                float NdotL = saturate(dot(surfaceNormal, lightDirection));
+                float NdotV = saturate(dot(surfaceNormal, viewDirection));
                 float minnaertPower = 1.0;
 
                 return NdotL * pow(NdotV, minnaertPower);
             }
+            */
 
-            half3 OpenSoMBlinnPhong(Light light, half3 surfaceNormal, half3 viewDirection, half3 albedo)
+            //
+            // URP Simple Lit Fragment Function
+            //
+            half OpenSoMAttenuation(float3 lightPosWS, float3 positionWS, float range, half a0 = 1.0h, half a1 = 0.4h, half a2 = 0.0h)
             {
-                half3 attenuatedLightColor = light.color * (light.distanceAttenuation * light.shadowAttenuation);
-                
-                return attenuatedLightColor * OpenSoMLightDiffuseFunc(light.direction, viewDirection, surfaceNormal) * albedo;
+                float d = distance(lightPosWS, positionWS);
+
+                if (d > range)
+                    return 0.0h;
+
+                half denominator = a0 + (a1 * d) + (a2 * d * d);
+                half atten = (denominator > 0.0001h) ? (1.0h / denominator) : 0.0h;
+
+                return saturate(atten) * saturate(1.0h - (d / range));
             }
 
-            half4 OpenSoMBlinnPhongFragment(InputData inputData, half3 albedo)
+            half3 OpenSoMLambert(half3 lightDirection, half3 surfaceNormal)
+            {
+                return saturate(dot(surfaceNormal, lightDirection));
+            }
+
+            half3 OpenSoMBlinnPhong(Light light, half attenuation)
+            {
+                return light.color * (attenuation * light.shadowAttenuation);
+            }
+
+            half3 OpenSoMBlinnPhongFragment(InputData inputData, half3 albedo)
             {
                 // RealtimeLights>CalculateShadowMask
-                half4 shadowMask = half4(1.0, 1.0, 1.0, 1.0);    // This is 1,1,1,1 always - we can remove it...
+                half4 shadowMask = half4(1.0, 1.0, 1.0, 1.0);
 
-                // AmbientOcclusion>CreateAmbientOcclusionFactor
-                // Could potentially bring this inside, but I don't see the point currently...
-                AmbientOcclusionFactor aoFactor = CreateAmbientOcclusionFactor(inputData.normalizedScreenSpaceUV, 1.0);
-                
-                // RealtimeLights>GetMainLight
-                Light mainLight  = GetMainLight(inputData.shadowCoord, inputData.positionWS, shadowMask);
-                // mainLight.color *= aoFactor.directAmbientOcclusion;
-
-                // Lighting>CreateLightingData
-                LightingData lightingData = (LightingData)0;
-                // lightingData.giColor               = (inputData.bakedGI * aoFactor.indirectAmbientOcclusion) * albedo;
-                lightingData.giColor               = inputData.bakedGI * albedo;
-                lightingData.emissionColor         = half3(0.0, 0.0, 0.0);
-                lightingData.vertexLightingColor   = 0;
-                lightingData.mainLightColor        = OpenSoMBlinnPhong(mainLight, inputData.normalWS, inputData.viewDirectionWS, albedo);
-                lightingData.additionalLightsColor = 0;
+                half3 additionalLightsColour = 0;
 
                 // UNCLEANED BELOW
                 #if defined(_ADDITIONAL_LIGHTS)
-                    uint pixelLightCount = GetAdditionalLightsCount();
-
                     #if USE_CLUSTER_LIGHT_LOOP
                         [loop] for (uint lightIndex = 0; lightIndex < min(URP_FP_DIRECTIONAL_LIGHTS_COUNT, MAX_VISIBLE_LIGHTS); lightIndex++)
                         {
                             CLUSTER_LIGHT_LOOP_SUBTRACTIVE_LIGHT_CHECK
-                            Light light  = GetAdditionalLight(lightIndex, inputData.positionWS, shadowMask);
-                            // light.color *= aoFactor.directAmbientOcclusion;
+                            Light light = GetAdditionalLight(lightIndex, inputData.positionWS, shadowMask);
 
-                            lightingData.additionalLightsColor += OpenSoMBlinnPhong(light, inputData.normalWS, inputData.viewDirectionWS, albedo);
+                            // This can be massively optimised by not using default GetAdditionalLight, which is doubling some of this work
+                            // internally.
+                            half distAtten = light.distanceAttenuation;
+                            #if USE_STRUCTURED_BUFFER_FOR_LIGHT_DATA
+                            if (_AdditionalLightsBuffer[lightIndex].position.w != 0.0f)
+                            #else
+                            if (_AdditionalLightsPosition[lightIndex].w != 0.0f)
+                            #endif
+                            {
+                                #if USE_STRUCTURED_BUFFER_FOR_LIGHT_DATA
+                                float3 lightPosWS = _AdditionalLightsBuffer[lightIndex].position.xyz;
+                                float attenX      = _AdditionalLightsBuffer[lightIndex].attenuation.x;
+                                #else
+                                float3 lightPosWS = _AdditionalLightsPosition[lightIndex].xyz;
+                                float attenX      = _AdditionalLightsAttenuation[lightIndex].x;
+                                #endif
+
+                                float range       = (attenX > 0.0001f) ? rsqrt(attenX) : 10.0f;
+
+                                distAtten = OpenSoMAttenuation(lightPosWS, inputData.positionWS, range, 1.0h, 0.4h, 0.0h);
+                            }
+
+                            half3 calcLight = OpenSoMBlinnPhong(light, distAtten);
+                            calcLight *= OpenSoMLambert(light.direction, inputData.normalWS);
+                            calcLight *= albedo;
+
+                            additionalLightsColour += calcLight;
                         }
+                    #else
+                        int pixelLightCount = int(min(_AdditionalLightsCount.x, unity_LightData.y));
                     #endif
 
                     LIGHT_LOOP_BEGIN(pixelLightCount)
-                        Light light  = GetAdditionalLight(lightIndex, inputData.positionWS, shadowMask);
-                        // light.color *= aoFactor.directAmbientOcclusion;
+                        Light light = GetAdditionalLight(lightIndex, inputData.positionWS, shadowMask);
+                        
+                        // This can be massively optimised by not using default GetAdditionalLight, which is doubling some of this work
+                        // internally.
+                        half distAtten = light.distanceAttenuation;
+                        #if USE_STRUCTURED_BUFFER_FOR_LIGHT_DATA
+                        if (_AdditionalLightsBuffer[lightIndex].position.w != 0.0f)
+                        #else
+                        if (_AdditionalLightsPosition[lightIndex].w != 0.0f)
+                        #endif
+                        {
+                            #if USE_STRUCTURED_BUFFER_FOR_LIGHT_DATA
+                            float3 lightPosWS = _AdditionalLightsBuffer[lightIndex].position.xyz;
+                            float attenX = _AdditionalLightsBuffer[lightIndex].attenuation.x;
+                            #else
+                            float3 lightPosWS = _AdditionalLightsPosition[lightIndex].xyz;
+                            float attenX = _AdditionalLightsAttenuation[lightIndex].x;
+                            #endif
 
-                        lightingData.additionalLightsColor += OpenSoMBlinnPhong(light, inputData.normalWS, inputData.viewDirectionWS, albedo);
+                            float range = (attenX > 0.0001f) ? rsqrt(attenX) : 10.0f;
+
+                            distAtten = OpenSoMAttenuation(lightPosWS, inputData.positionWS, range, 1.0h, 0.4h, 0.0h);
+                        }
+
+                        half3 calcLight = OpenSoMBlinnPhong(light, distAtten);
+                        calcLight *= OpenSoMLambert(light.direction, inputData.normalWS);
+                        calcLight *= albedo;
+
+                        additionalLightsColour += calcLight;
                     LIGHT_LOOP_END
                 #endif
 
-                return CalculateFinalColor(lightingData, 1.0);
+                // RealtimeLights>GetMainLight
+                Light mainLight = GetMainLight(inputData.shadowCoord, inputData.positionWS, shadowMask);
+
+                half3 calcMainLight = OpenSoMBlinnPhong(mainLight, mainLight.distanceAttenuation);
+                calcMainLight *= OpenSoMLambert(mainLight.direction, inputData.normalWS);
+                calcMainLight *= albedo;
+
+                // Final Lighting Calculation
+                half3 lightBlendCalc = half3(0.0, 0.0, 0.0);
+                lightBlendCalc += (inputData.bakedGI * albedo);
+                lightBlendCalc += calcMainLight;
+                lightBlendCalc += additionalLightsColour;
+                // lightBlendCalc += _EmissionColor.rgb;
+
+                return lightBlendCalc;
             }
 
             half4 LitPassFragmentSimple(V2F input) : SV_Target0
@@ -348,17 +405,14 @@ Shader "OpenSoM/Tile (Texture, Lit, Simple)"
                 inputData.shadowMask = half4(1, 1, 1, 1);
 
                 // Apply Lighting (Extracted & cleaned up from Lighting>UniversalFragmentBlinnPhong)
-                half4 color = OpenSoMBlinnPhongFragment(inputData, albedo);
+                half3 colour = OpenSoMBlinnPhongFragment(inputData, albedo);
 
                 // Apply Fog
                 half viewZ     = -(dot(UNITY_MATRIX_V[2].xyz, inputData.positionWS) + UNITY_MATRIX_V[2].w);
                 half fogFactor = saturate(mad(viewZ, unity_FogParams.z, unity_FogParams.w - _ProjectionParams.y * unity_FogParams.z));
-                color.rgb      = lerp(half3(unity_FogColor.rgb), color.rgb, fogFactor);
+                colour.rgb     = lerp(half3(unity_FogColor.rgb), colour, fogFactor);
 
-                // Alpha is always 1.0, since we clip instead
-                color.a = 1.0;
-
-                return color;
+                return half4(colour.rgb, 1.0);
             }
 
             ENDHLSL

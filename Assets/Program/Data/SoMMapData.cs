@@ -49,6 +49,7 @@ public class SoMMapData : ScriptableObject
     [field: SerializeField, ReadOnly] public uint WorldHeight;
     [field: SerializeField, ReadOnly] public MapTile[] WorldTiles;
     [field: SerializeField, ReadOnly] public MPXObject[] WorldObjects;
+    [field: SerializeField, ReadOnly] public MPXItem[] WorldItems;
 
     // Non Inspector Properties
     [field: SerializeField] public UnityEngine.Material[] RenderMaterials { get; private set; }
@@ -66,38 +67,6 @@ public class SoMMapData : ScriptableObject
     };
 
     TextureResource[] textureResources;
-
-    // Data Definitions
-    [StructLayout(LayoutKind.Explicit, Pack = 1)]
-    public struct MPXObjectFlagsLight
-    {
-        [FieldOffset(0x00)] public uint colour;
-        [FieldOffset(0x04)] public float range;
-        [FieldOffset(0x08)] public byte affectObjects;
-    }
-
-    [StructLayout(LayoutKind.Explicit, Pack = 1)]
-    public unsafe struct MPXObjectFlags
-    {
-        [FieldOffset(0x00)] public MPXObjectFlagsLight lightFlags;  // 7 of 32 bytes used
-        [FieldOffset(0x00)] public fixed byte raw[32];              // Raw Access
-    }
-
-    [StructLayout(LayoutKind.Explicit, Pack = 1), Serializable]
-    public struct MPXObject
-    {
-        [FieldOffset(0x00)] public short declarationID;     // PR2-PRO ID
-        [FieldOffset(0x02)] public byte unkx02;             // Unknown.
-        [FieldOffset(0x03)] public byte animating;          // Object is animating by default (traps only. animating is a crap name)
-        [FieldOffset(0x04)] public byte visible;            // Object is visible by default
-        [FieldOffset(0x05)] public byte unkx05;             // Unknown.
-        [FieldOffset(0x06)] public byte unkx06;             // Unknown.
-        [FieldOffset(0x07)] public byte unkx07;             // Unknown.
-        [FieldOffset(0x08)] public Vector3 position;        // Position of the object
-        [FieldOffset(0x14)] public Vector3 rotation;        // Rotation of the object (degrees)
-        [FieldOffset(0x20)] public float scale;
-        [FieldOffset(0x24)] public MPXObjectFlags flags;
-    }
 
     [StructLayout(LayoutKind.Explicit, Pack = 1), Serializable]
     struct MPXTile
@@ -192,7 +161,7 @@ public class SoMMapData : ScriptableObject
         WorldObjects = ReadMPXObjects(fis);
         ReadMPXEnemies(fis);
         ReadMPXNPCs(fis);
-        ReadMPXItems(fis);
+        WorldItems = ReadMPXItems(fis);
 
         MPXTile[] tileData     = ReadMPXWorld(fis);
         string[] textureData   = ReadMPXTextures(fis);
@@ -325,13 +294,27 @@ public class SoMMapData : ScriptableObject
     /// <summary>
     /// Read MPX item list from a stream
     /// </summary>
-    void ReadMPXItems(FileInputStream fis)
+    MPXItem[] ReadMPXItems(FileInputStream fis)
     {
         // Item Count
         int itemCount = fis.ReadS32();
 
         // Item Data
-        fis.SeekRelative(0x28 * itemCount);
+        int itemUsedNum = 0;
+
+        MPXItem[] itemData = new MPXItem[itemCount];
+        for (int i = 0; i < itemCount; ++i)
+        {
+            itemData[i] = fis.ReadStruct<MPXItem>();
+
+            if (itemData[i].declarationID != -1)
+                itemUsedNum++;
+        }
+
+        // Item Logging
+        Logger.Info($"MPX Items = {{ Used: {itemUsedNum:D3}/{itemCount:D3} }}");
+
+        return itemData;
     }
 
     /// <summary>
