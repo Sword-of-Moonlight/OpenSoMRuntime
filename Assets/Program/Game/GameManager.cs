@@ -16,6 +16,8 @@ public class GameManager : MonoBehaviour
     [field: SerializeField] public SoMLevelCurve LevelCurve { get; private set; }
     [field: SerializeField] public RenderingStyle RenderStyle { get; private set; }
 
+    [field: SerializeField] public SomItemRegistery ItemRegistry { get; private set; }
+
     [field: SerializeField] public InputActionAsset InputActions { get; private set; }
     [field: SerializeField] public MenuManager MenuManager { get; private set; }
     [field: SerializeField] public PlayerController PlayerController { get; private set; }
@@ -156,5 +158,8 @@ public class GameManager : MonoBehaviour
         // Initialize Game Data
         LevelCurve.Initialize();
         ObjectData.Load();
+
+        // Follow this for future SoM data implementations!.. (Remove this comment when refactor is complete)
+        ItemRegistry.Load();
     }
 }

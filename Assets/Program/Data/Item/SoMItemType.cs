@@ -1,6 +1,4 @@
-using UnityEngine;
-
-public enum SoMItemType : ushort
+public enum SomItemType : ushort
 {
     Usable = 0,
     Weapon = 1,

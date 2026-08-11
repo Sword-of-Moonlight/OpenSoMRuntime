@@ -1,14 +1,14 @@
 using System;
 using System.Runtime.InteropServices;
 
-[StructLayout(LayoutKind.Auto, Pack = 1), Serializable]
-public unsafe struct SoMItemProfile
+[StructLayout(LayoutKind.Sequential, Pack = 1), Serializable]
+public unsafe struct SomItemProfile
 {
     public string name;
     public string modelFile;
-    public SoMItemType type;
+    public SomItemType type;
     public float menuElevationOffset;
     public ushort menuTilt;
     public ushort worldTilt;
-    public SoMItemProfileData data;
+    public SomItemProfileData data;
 }

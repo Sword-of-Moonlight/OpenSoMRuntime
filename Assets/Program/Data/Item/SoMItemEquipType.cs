@@ -1,6 +1,4 @@
-using UnityEngine;
-
-public enum SoMItemEquipType : byte
+public enum SomItemEquipType : byte
 {
     Helm      = 0,
     Body      = 1,
