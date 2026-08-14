@@ -5,15 +5,15 @@ using UnityEngine;
 public class SomItemRegistery : ScriptableObject
 {
     [field: Header("Profile")]
-    [field: SerializeField] public SomItemProfile[] Profile { get; private set; }
-    [field: SerializeField] public int ProfileCount { get; private set; }
+    [field: SerializeField, ReadOnly] public SomItemProfile[] Profile { get; private set; }
+    [field: SerializeField, ReadOnly] public int ProfileCount { get; private set; } = 0;
 
     [field: Header("Parameter")]
-    [field: SerializeField] public SomItemParameter[] Parameter { get; private set; }
-    [field: SerializeField] public int ParameterCount { get; private set; }
+    [field: SerializeField, ReadOnly] public SomItemParameter[] Parameter { get; private set; }
+    [field: SerializeField, ReadOnly] public int ParameterCount { get; private set; } = 0;
 
     /// <summary>
-    /// Loads item profile and parameter data into memory.
+    /// Load data for the item registry
     /// </summary>
     public void Load()
     {
@@ -31,6 +31,20 @@ public class SomItemRegistery : ScriptableObject
     }
 
     /// <summary>
+    /// Free data from the item registry
+    /// </summary>
+    public void Free()
+    {
+        // Clear out parameter data
+        ParameterCount = 0;
+        Parameter = null;
+
+        // Clear out profile data
+        ProfileCount = 0;
+        Profile = null;
+    }
+
+    /// <summary>
     /// Load profile data into memory
     /// </summary>
     void LoadProfileData(string pr2File)
@@ -42,22 +56,7 @@ public class SomItemRegistery : ScriptableObject
         ProfileCount = (int)fis.ReadU32();
 
         // PRF Items...
-        Profile = new SomItemProfile[ProfileCount];
-
-        for (int i = 0; i < ProfileCount; ++i)
-        {
-            SomItemProfile prf = new SomItemProfile();
-
-            prf.name                = fis.ReadFixedString(31, EncodingExtensions.SJIS).Sanitise();
-            prf.modelFile           = fis.ReadFixedString(31, EncodingExtensions.SJIS).Sanitise();
-            prf.type                = fis.ReadEnum<SomItemType>();
-            prf.menuElevationOffset = fis.ReadF32();
-            prf.menuTilt            = fis.ReadU16();
-            prf.worldTilt           = fis.ReadU16();
-            prf.data                = fis.ReadStruct<SomItemProfileData>();
-
-            Profile[i] = prf;
-        }
+        Profile = fis.ReadStructArray<SomItemProfile>(ProfileCount);
     }
 
     /// <summary>

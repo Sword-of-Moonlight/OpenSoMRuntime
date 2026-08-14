@@ -12,10 +12,10 @@ public class GameManager : MonoBehaviour
     [field: Header("References (External)")]
     /// <summary>SoM Project Data</summary>
     [field: SerializeField] public SoMProjectData ProjectData { get; private set; }
-    [field: SerializeField] public SoMObjectData ObjectData { get; private set; }
     [field: SerializeField] public SoMLevelCurve LevelCurve { get; private set; }
     [field: SerializeField] public RenderingStyle RenderStyle { get; private set; }
 
+    [field: SerializeField] public SomObjectRegistry ObjectRegistry { get; private set; }
     [field: SerializeField] public SomItemRegistery ItemRegistry { get; private set; }
 
     [field: SerializeField] public InputActionAsset InputActions { get; private set; }
@@ -74,6 +74,10 @@ public class GameManager : MonoBehaviour
         // Shut down the menu manager, freeing all menu related assets
         MenuManager.Shutdown();
 
+        // Free our registry data...
+        ObjectRegistry.Free();
+        ItemRegistry.Free();
+
         // CURRENTLY FULL OF MEMORY LEAKS: we need to make purge have a 'forceReleaseAll' mode which clears out all assets.
         ResourceManager.Purge();
         ResourceManager.Dump();
@@ -108,7 +112,7 @@ public class GameManager : MonoBehaviour
             DataPath = Path.GetFullPath(Application.persistentDataPath);
         }
 
-        // TO-DO: Fix
+        // TO-DO: Implement this for SOM_DB support. Need to _CHECK_ the arguments before we fucking use them, lol... SOM_DB also takes a map ID, and allows immediate start when it is passed.
         // EditorPath = arguments[2];
         // ProjectPath = arguments[1];
 
@@ -132,7 +136,7 @@ public class GameManager : MonoBehaviour
 
         // Initialize DO Tween
         DOTween.Init(false, false, LogBehaviour.Default);
-        DOTween.SetTweensCapacity(64, 32);
+        DOTween.SetTweensCapacity(128, 64);
     }
 
     /// <summary>
@@ -157,9 +161,9 @@ public class GameManager : MonoBehaviour
 
         // Initialize Game Data
         LevelCurve.Initialize();
-        ObjectData.Load();
 
         // Follow this for future SoM data implementations!.. (Remove this comment when refactor is complete)
         ItemRegistry.Load();
+        ObjectRegistry.Load();
     }
 }
