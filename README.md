@@ -18,7 +18,6 @@ The initial goal is to have a fit for purpose replacement of the runtime in full
 Eventual goals will be to have a more expansible runtime environment, with different graphical modes such as a PSX or modern render mode.  Other expansions could be to the scripting system, to facilitate new commands.  Additionally, striving for 99.9% SoM accurate behaviour (minus the severe bugs) will be a goal, with toggles for improved behaviours.
 
 
-
 ## Game Compatibility
 The majority of games will currently load up and play through all sequences (both slideshow and video types), display the titlescreen, and load into the initial map.  You are able to explore, although collision is currently ignored. (it is loaded, the player controller just has no response to collision)
 
@@ -33,25 +32,26 @@ Will not load correctly, SomEx has a slightly different file system, and slightl
 These load correctly, but depending on the video codec used - may not play the sequences.  The old recommendation was to use the CINEPAK video codec, which is ancient, terrible... and doesn't work with Video for Windows through Unity.
 
 
-
 ## Other Notes
 Compiled Game Data for the Sword of Moonlight project "Reign" is included for development reasons.  Reign is created by myself, so I felt most comfortable with distribution of that.  Additional games may be used for testing by simply setting up a folder structure similar to Reign in streamingAssets, and copying the content of a downloaded SoM game (likely from https://www.swordofmoonlight.com/games, lol) into the folder.  You must then set the parameter of "Multi Game Name" on GameManager to the name of the game folder (which will also be prefixed with "GameData_", e.g. "GameData_ReturnToMelanat", "GameData_TearsOfTheMoon")
 
 
-
 ## Contributors
-- [StolenBattenberg](https://github.com/TheStolenBattenberg)
-
 We are seeking contributors!  Get your hands dirty, and dig in!  Please review the existing code for style considerations.
-
+- [StolenBattenberg](https://github.com/TheStolenBattenberg)
 
 
 ## Third Party Asset Declaration
-Open SoM Runtime is using the following third party assets:
+Open SoM Runtime is using the following assets:
 - [Roman SD](https://www.dafont.com/roman-sd.font)
 - [Shangri-La NF](https://www.dafont.com/shangri.font)
 
 
+## Third Party Unity Package Declaration
+Open SoM Runtime is using the following unity packages:
+- [DOTween](https://dotween.demigiant.com/)
+
 
 ## Third Party Code Declaration
-- [MeltySynth](https://github.com/sinshu/meltysynth): Used for MIDI playback. MIT License.
+Open SoM Runtime is using the following libraries:
+- [MeltySynth](https://github.com/sinshu/meltysynth). MIT License.
