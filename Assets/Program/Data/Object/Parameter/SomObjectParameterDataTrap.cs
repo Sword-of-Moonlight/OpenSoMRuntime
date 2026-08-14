@@ -1,23 +1,24 @@
 using System;
 using System.Runtime.InteropServices;
+using UnityEngine;
 
 [StructLayout(LayoutKind.Explicit, Pack = 1), Serializable]
 public struct SomObjectParameterDataTrap
 {
     // Data
-    [FieldOffset(0x00)] float range;
-    [FieldOffset(0x04)] byte slashDamage;
-    [FieldOffset(0x05)] byte smashDamage;
-    [FieldOffset(0x06)] byte stabDamage;
-    [FieldOffset(0x07)] byte fireDamage;
-    [FieldOffset(0x08)] byte earthDamage;
-    [FieldOffset(0x09)] byte windDamage;
-    [FieldOffset(0x0A)] byte waterDamage;
-    [FieldOffset(0x0B)] byte holyDamage;
-    [FieldOffset(0x0C)] SomObjectTrapStatus statusEffect;
-    [FieldOffset(0X0D)] byte statusChance;
-    [FieldOffset(0x0E)] byte unkx0E;
-    [FieldOffset(0x0F)] byte unkx0F;
+    [FieldOffset(0x00), SerializeField] float range;
+    [FieldOffset(0x04), SerializeField] byte slashDamage;
+    [FieldOffset(0x05), SerializeField] byte smashDamage;
+    [FieldOffset(0x06), SerializeField] byte stabDamage;
+    [FieldOffset(0x07), SerializeField] byte fireDamage;
+    [FieldOffset(0x08), SerializeField] byte earthDamage;
+    [FieldOffset(0x09), SerializeField] byte windDamage;
+    [FieldOffset(0x0A), SerializeField] byte waterDamage;
+    [FieldOffset(0x0B), SerializeField] byte holyDamage;
+    [FieldOffset(0x0C), SerializeField] SomObjectTrapStatus statusEffect;
+    [FieldOffset(0X0D), SerializeField] byte statusChance;
+    [FieldOffset(0x0E), SerializeField] byte unkx0E;
+    [FieldOffset(0x0F), SerializeField] byte unkx0F;
 
     /// <summary>
     /// The range of the trap.

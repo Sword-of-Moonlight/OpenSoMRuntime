@@ -1,16 +1,17 @@
 using System;
 using System.Runtime.InteropServices;
+using UnityEngine;
 
 [StructLayout(LayoutKind.Explicit, Pack = 1), Serializable]
 public unsafe struct SomObjectParameter
 {
     // Data
-    [FieldOffset(0x00)] fixed byte name[31];
-    [FieldOffset(0x1F)] byte revealed;
-    [FieldOffset(0x20)] float scale;
-    [FieldOffset(0x24)] short profileId;
-    [FieldOffset(0x26)] short unkx26;
-    [FieldOffset(0x28)] SomObjectParameterData data;
+    [FieldOffset(0x00), SerializeField] fixed byte name[31];
+    [FieldOffset(0x1F), SerializeField] byte revealed;
+    [FieldOffset(0x20), SerializeField] float scale;
+    [FieldOffset(0x24), SerializeField] short profileId;
+    [FieldOffset(0x26), SerializeField] short unkx26;
+    [FieldOffset(0x28), SerializeField] SomObjectParameterData data;
 
     /// <summary>
     /// Name of the object as the game defines it.

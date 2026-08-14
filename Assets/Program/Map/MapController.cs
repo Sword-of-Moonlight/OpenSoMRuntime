@@ -401,7 +401,7 @@ public class MapController : MonoBehaviour
     void SpawnObject(EntityManager entityManager, MPXObject mpxObject, int index)
     {
         // Get object data
-        if (!GameManager.Instance.ObjectData.GetObjectData(mpxObject.declarationID, out SoMObjectProfile profile, out SoMObjectParameter parameter, out ModelResource model))
+        if (!GameManager.Instance.ObjectRegistry.GetObjectData(mpxObject.declarationID, out SomObjectProfile profile, out SomObjectParameter parameter, out ModelResource model))
             return;
 
         // Set up mesh data for the object
@@ -412,7 +412,7 @@ public class MapController : MonoBehaviour
         LocalTransform localTransform = LocalTransform.FromPositionRotationScale(
             mpxObject.position, 
             quaternion.Euler(-mpxObject.rotation, math.RotationOrder.ZXY),
-            parameter.scale * mpxObject.scale
+            parameter.Scale * mpxObject.scale
         );
 
         // Create root entity
@@ -429,9 +429,9 @@ public class MapController : MonoBehaviour
             });
 
         // Depending on the object type, additional entities may be required.
-        switch (profile.objectClass)
+        switch (profile.type)
         {
-            case SoMObjectClass.Light:
+            case SomObjectType.Light:
                 // Don't bother with range 0 lights, I'm not convinced they do anything...
                 if (mpxObject.flags.lightFlags.range <= 0)
                     break;
