@@ -7,102 +7,86 @@ namespace MeltySynth
     /// </summary>
     public sealed class SynthesizerSettings
     {
-        internal static int DefaultBlockSize = 64;
-        internal static int DefaultMaximumPolyphony = 64;
-        internal static bool DefaultEnableReverbAndChorus = true;
+        /**
+         * Constants
+        **/
+        public const int DefaultSampleRate = 44100;
+        public const int DefaultBlockSize = 64;
+        public const int DefaultMaximumPolyphony = 64;
+        public const bool DefaultEnableReverb = true;
+        public const bool DefaultEnableChorus = true;
 
-        private int sampleRate;
-        private int blockSize;
-        private int maximumPolyphony;
-        private bool enableReverbAndChorus;
-
-        /// <summary>
-        /// Initializes a new instance of synthesizer settings.
-        /// </summary>
-        /// <param name="sampleRate">The sample rate for synthesis.</param>
-        public SynthesizerSettings(int sampleRate)
-        {
-            CheckSampleRate(sampleRate);
-
-            this.sampleRate = sampleRate;
-            this.blockSize = DefaultBlockSize;
-            this.maximumPolyphony = DefaultMaximumPolyphony;
-            this.enableReverbAndChorus = DefaultEnableReverbAndChorus;
-        }
-
-        private static void CheckSampleRate(int value)
-        {
-            if (!(16000 <= value && value <= 192000))
-            {
-                throw new ArgumentOutOfRangeException("The sample rate must be between 16000 and 192000.");
-            }
-        }
-
-        private static void CheckBlockSize(int value)
-        {
-            if (!(8 <= value && value <= 1024))
-            {
-                throw new ArgumentOutOfRangeException("The block size must be between 8 and 1024.");
-            }
-        }
-
-        private static void CheckMaximumPolyphony(int value)
-        {
-            if (!(8 <= value && value <= 256))
-            {
-                throw new ArgumentOutOfRangeException("The maximum number of polyphony must be between 8 and 256.");
-            }
-        }
+        /**
+         * Data
+        **/
+        int _sampleRate       = DefaultSampleRate;
+        int _blockSize        = DefaultBlockSize;
+        int _maximumPolyphony = DefaultMaximumPolyphony;
+        bool _enableReverb    = DefaultEnableReverb;
+        bool _enableChorus    = DefaultEnableChorus;
 
         /// <summary>
-        /// Gets or sets the sample rate for synthesis.
+        /// Sample rate of synthesis
         /// </summary>
         public int SampleRate
         {
-            get => sampleRate;
-
+            get => _sampleRate;
             set
             {
-                CheckSampleRate(value);
-                sampleRate = value;
+                if (!(8 <= 11250 && value <= 192000))
+                    throw new ArgumentOutOfRangeException(nameof(value), "The sample rate must be between (or equal to) 11250 and 192000.");
+
+                _sampleRate = value;
             }
         }
 
         /// <summary>
-        /// Gets or sets the block size for rendering waveform.
+        /// Block size used for rendering the waveform
         /// </summary>
         public int BlockSize
         {
-            get => blockSize;
-
+            get => _blockSize;
             set
             {
-                CheckBlockSize(value);
-                blockSize = value;
+                if (!(8 <= value && value <= 1024))
+                    throw new ArgumentOutOfRangeException(nameof(value), "The block size must be between 8 and 1024.");
+
+                _blockSize = value;
             }
         }
 
         /// <summary>
-        /// Gets or sets the number of maximum polyphony.
+        /// Maximum polyphony value (simutanious notes)
         /// </summary>
         public int MaximumPolyphony
         {
-            get => maximumPolyphony;
+            get => _maximumPolyphony;
 
             set
             {
-                CheckMaximumPolyphony(value);
-                maximumPolyphony = value;
+                if (!(8 <= value && value <= 256))
+                    throw new ArgumentOutOfRangeException(nameof(value), "The maximum number of polyphony must be between 8 and 256.");
+
+                _maximumPolyphony = value;
             }
         }
 
         /// <summary>
-        /// Gets or sets whether reverb and chorus are enabled.
+        /// Reverb enable flag
         /// </summary>
-        public bool EnableReverbAndChorus
+        public bool EnableReverb
         {
-            get => enableReverbAndChorus;
-            set => enableReverbAndChorus = value;
+            get => _enableReverb;
+            set => _enableReverb = value;
+        }
+
+        /// <summary>
+        /// Chorus enable flag
+        /// </summary>
+        public bool EnableChorus
+        {
+            get => _enableChorus;
+            set => _enableChorus = value;
         }
     }
 }

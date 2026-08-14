@@ -36,15 +36,16 @@ public class MusicManager : MonoBehaviour
         // Setup synthesizer and sequencer
         AudioConfiguration unityAudioConfiguration = AudioSettings.GetConfiguration();
 
-        synthesizerSettings = new SynthesizerSettings(AudioSettings.outputSampleRate)
+        synthesizerSettings = new SynthesizerSettings
         {
             SampleRate            = unityAudioConfiguration.sampleRate,
             MaximumPolyphony      = 64,
             BlockSize             = unityAudioConfiguration.dspBufferSize,
-            EnableReverbAndChorus = true
+            EnableReverb          = true,
+            EnableChorus          = false
         };
 
-        synthesizer = new Synthesizer(Path.Combine(Path.GetFullPath(Application.streamingAssetsPath), "SoundFont", "gm.sf2"), synthesizerSettings);
+        synthesizer = new Synthesizer(new SoundFont(Path.Combine(Path.GetFullPath(Application.streamingAssetsPath), "SoundFont", "gm.sf2")), synthesizerSettings);
 
         midiSequencer = new MidiFileSequencer(synthesizer);
     }
@@ -81,7 +82,7 @@ public class MusicManager : MonoBehaviour
             
         switch (Path.GetExtension(musicFilePath).ToUpperInvariant())
         {
-            case ".WAV":
+            case ".WAV" or "WAVE":
             case ".SND":
                 StartWaveformAudio(musicFilePath, loop);
                 break;
