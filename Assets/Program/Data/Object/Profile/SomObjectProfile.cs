@@ -1,12 +1,13 @@
 using System;
 using System.Runtime.InteropServices;
+using UnityEngine;
 
 [StructLayout(LayoutKind.Explicit, Pack = 1), Serializable]
 public unsafe struct SomObjectProfile
 {
     // Data
-    [FieldOffset(0x00)] fixed byte name[31];                     // Profile name. S-JIS, 15 usable 2 byte characters + null terminator.
-    [FieldOffset(0x1F)] fixed byte modelFile[31];                // Model name.   ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^
+    [FieldOffset(0x00), SerializeField] fixed byte name[31];                            // Profile name. S-JIS, 15 usable 2 byte characters + null terminator.
+    [FieldOffset(0x1F), SerializeField] fixed byte modelFile[31];                       // Model name.   ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^  ^
     [FieldOffset(0x3E)] public byte billboard;                          // If object is billboard
     [FieldOffset(0x3F)] public byte openable;                           // If object is openable... broken.
     [FieldOffset(0x40)] public float colliderHeight;                    // Collider height
@@ -14,7 +15,7 @@ public unsafe struct SomObjectProfile
     [FieldOffset(0x48)] public float colliderRD;                        // Collider radius or depth
     [FieldOffset(0x4C)] public float f32x4C;                            // Unknown. Usually 1.0F.
     [FieldOffset(0x50)] public SomObjectColliderType colliderType;      // type of collider
-    [FieldOffset(0x51)] SomObjectTextureScrollType scrollMode;   // texture scroll mode
+    [FieldOffset(0x51), SerializeField] SomObjectTextureScrollType scrollMode;   // texture scroll mode
     [FieldOffset(0x52)] public SomObjectType type;                      // The type of object.
     [FieldOffset(0x54)] public short effectId;                          // ID of an effect to use on the object. -1 = None.
     [FieldOffset(0x56)] public byte effectControlPointAnchor;           // Anchor control point.

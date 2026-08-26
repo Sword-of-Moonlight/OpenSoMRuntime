@@ -1,5 +1,3 @@
-using UnityEngine;
-using Unity.Mathematics;
 using Unity.Entities;
 
 public struct RuntimeMapObject : IComponentData

@@ -1,4 +1,6 @@
+using System;
 using System.IO;
+
 using UnityEngine;
 
 [CreateAssetMenu(fileName = "SomItemRegistry", menuName = "Sword of Moonlight/Item Registry")]
@@ -12,6 +14,12 @@ public class SomItemRegistery : ScriptableObject
     [field: SerializeField, ReadOnly] public SomItemParameter[] Parameter { get; private set; }
     [field: SerializeField, ReadOnly] public int ParameterCount { get; private set; } = 0;
 
+    // const, readonly
+    public readonly static string ItemDataPath = Path.Combine("DATA", "ITEM");
+
+    // data
+    ModelResource[] modelResource;
+
     /// <summary>
     /// Load data for the item registry
     /// </summary>
@@ -22,6 +30,8 @@ public class SomItemRegistery : ScriptableObject
             LoadProfileData(foundPR2File);
         else
             Logger.Critical("Couldn't find ITEM.PR2 file!");
+
+        modelResource = new ModelResource[ProfileCount];
 
         // Load item parameters
         if (ResourceManager.Find(Path.Combine("PARAM", "ITEM.PRM"), out string foundPRMFile))
@@ -42,6 +52,46 @@ public class SomItemRegistery : ScriptableObject
         // Clear out profile data
         ProfileCount = 0;
         Profile = null;
+    }
+
+    /// <summary>
+    /// Gets data for a specific item, using it's parameter ID
+    /// </summary>
+    public bool GetData(int itemId, out SomItemProfile profile, out SomItemParameter parameter, out ModelResource model)
+    {
+        // Safty range check...
+        if (itemId < 0 || itemId >= ParameterCount)
+            throw new ArgumentOutOfRangeException(nameof(itemId), "Item id was out of range.");
+
+        // Get parameter
+        parameter = Parameter[itemId];
+
+        // Get profile
+        profile = Profile[parameter.ProfileId];
+
+        // Check if the model assossiated with this profile has been loaded yet...
+        if (modelResource[parameter.ProfileId] == null)
+        {
+            // Find the file path for the model...
+            if (!ResourceManager.Find(Path.Combine(ItemDataPath, "MODEL", profile.ModelFile), out string foundModel))
+                throw new Exception("Failed to find object model!");
+
+            // Load the resource
+            ulong resourceName = ResourceManager.Load<ModelResource>(foundModel, new ModelParameters
+            {
+                CreateDefaultMaterials = true,
+                ModelType = ModelParameterType.Static,
+                TextureRootPath = Path.Combine(ItemDataPath, "MODEL")
+            });
+
+            // We can now get and store a reference to the model here...
+            modelResource[parameter.ProfileId] = ResourceManager.Get<ModelResource>(resourceName);
+        }
+
+        // Get model
+        model = modelResource[parameter.ProfileId];
+
+        return true;
     }
 
     /// <summary>
@@ -70,25 +120,6 @@ public class SomItemRegistery : ScriptableObject
         ParameterCount = 250;
 
         // PRM Items...
-        Parameter = new SomItemParameter[ParameterCount];
-
-        for (int i = 0; i < ParameterCount; ++i)
-        {
-            SomItemParameter prm = new SomItemParameter();
-
-            prm.profileId   = fis.ReadS16();
-            prm.name        = fis.ReadFixedString(031, EncodingExtensions.SJIS).Sanitise();
-            prm.description = fis.ReadFixedString(241, EncodingExtensions.SJIS).Sanitise();
-            prm.unkx112     = fis.ReadU32();
-            prm.unkx116     = fis.ReadU32();
-            prm.unkx11A     = fis.ReadU32();
-            prm.unkx11E     = fis.ReadU32();
-            prm.priority    = fis.ReadU8();
-            prm.unkx123     = fis.ReadU8();
-            prm.unkx124     = fis.ReadU32();
-            prm.data        = fis.ReadStruct<SomItemParameterData>();
-
-            Parameter[i] = prm;
-        }
+        Parameter = fis.ReadStructArray<SomItemParameter>(ParameterCount);
     }
 }

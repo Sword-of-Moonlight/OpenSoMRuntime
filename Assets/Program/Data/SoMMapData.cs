@@ -257,7 +257,7 @@ public class SoMMapData : ScriptableObject
         {
             objectData[i] = fis.ReadStruct<MPXObject>();
 
-            if (objectData[i].declarationID != -1)
+            if (objectData[i].parameterId != -1)
                 objectUsedNum++;
         }
 

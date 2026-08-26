@@ -25,6 +25,10 @@ public class MapController : MonoBehaviour
     // ECS Archetypes    
     RenderFilterSettings ObjectRenderSettings;
     EntityArchetype ArchetypeObjectRoot, ArchetypeObjectMesh;
+
+    RenderFilterSettings ItemRenderSettings;
+    EntityArchetype ArchetypeItemRoot, ArchetypeItemMesh;
+
     EntityArchetype ArchetypeTileRoot, ArchetypeTileMesh;
     EntityArchetype ArchetypeChild;
 
@@ -74,7 +78,9 @@ public class MapController : MonoBehaviour
         SetupMapCamera();
 
         SetupMapTiles();
+
         SetupMapObjects();
+        SetupMapItems();
 
         SetupMapMusic();
 
@@ -164,7 +170,36 @@ public class MapController : MonoBehaviour
             );
 
         // Item Archetypes
-        // TO-DO
+        ItemRenderSettings = new RenderFilterSettings
+        {
+            MotionMode         = MotionVectorGenerationMode.ForceNoMotion,
+            Layer              = 0,
+            ReceiveShadows     = GameManager.Instance.RenderStyle.EnableRealTimeShadows,
+            ShadowCastingMode  = GameManager.Instance.RenderStyle.EnableRealTimeShadows ? ShadowCastingMode.On : ShadowCastingMode.Off,
+            RenderingLayerMask = 1,
+            StaticShadowCaster = false
+        };
+
+        ArchetypeItemRoot = entityManager.CreateArchetype(
+            typeof(LocalTransform),
+            typeof(LocalToWorld),
+            typeof(LinkedEntityGroup),
+            typeof(MapRuntimeItem)
+            );
+
+        ArchetypeItemMesh = entityManager.CreateArchetype(
+            typeof(Parent),
+            typeof(LocalTransform),
+            typeof(LocalToWorld),
+            typeof(PerInstanceCullingTag),
+            typeof(WorldToLocal_Tag),
+            typeof(DepthSorted_Tag),
+            typeof(RenderBounds),
+            typeof(RenderMeshArray),
+            typeof(RenderFilterSettings),
+            typeof(MaterialMeshInfo),
+            typeof(WorldRenderBounds)
+            );
 
         // Enemy Archetypes
         // TO-DO
@@ -388,7 +423,7 @@ public class MapController : MonoBehaviour
             MPXObject mpxObject = mapData.WorldObjects[i];
 
             // We want to avoid invalid declarations...
-            if (mpxObject.declarationID == -1)
+            if (mpxObject.parameterId == -1)
                 continue;
 
             SpawnObject(entityManager, mpxObject, i);
@@ -401,7 +436,7 @@ public class MapController : MonoBehaviour
     void SpawnObject(EntityManager entityManager, MPXObject mpxObject, int index)
     {
         // Get object data
-        if (!GameManager.Instance.ObjectRegistry.GetObjectData(mpxObject.declarationID, out SomObjectProfile profile, out SomObjectParameter parameter, out ModelResource model))
+        if (!GameManager.Instance.ObjectRegistry.GetData(mpxObject.parameterId, out SomObjectProfile profile, out SomObjectParameter parameter, out ModelResource model))
             return;
 
         // Set up mesh data for the object
@@ -485,6 +520,79 @@ public class MapController : MonoBehaviour
 
             // Add the child to the root's LinkedEntityGroup so it gets culled together
             entityManager.GetBuffer<LinkedEntityGroup>(objectRootEntity).Add(meshEntity);
+        }
+    }
+
+    /// <summary>
+    /// Sets up the objects
+    /// </summary>
+    void SetupMapItems()
+    {
+        EntityManager entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
+
+        for (int i = 0; i < mapData.WorldItems.Length; ++i)
+        {
+            // Get an object from our world object data
+            MPXItem mpxItem = mapData.WorldItems[i];
+
+            // We want to avoid invalid declarations...
+            if (mpxItem.parameterId == -1)
+                continue;
+
+            SpawnItem(entityManager, mpxItem, i);
+        }
+    }
+
+    /// <summary>
+    /// Spawns a single map item
+    /// </summary>
+    void SpawnItem(EntityManager entityManager, MPXItem mpxItem, int index)
+    {
+        // Get item data
+        if (!GameManager.Instance.ItemRegistry.GetData(mpxItem.parameterId, out SomItemProfile profile, out SomItemParameter parameter, out ModelResource model))
+            return;
+
+        // Set up mesh data for the item
+        // TO-DO: We could preload all of these, and store the render mesh array in the corrisponding registry...
+        Mesh mesh = model.Get();
+        RenderMeshArray renderMeshArray = new RenderMeshArray(model.Materials, new Mesh[] { mesh });
+
+        // Build the item transform
+        LocalTransform localTransform = LocalTransform.FromPositionRotationScale(
+            mpxItem.position - new Vector3(0F, profile.MenuElevation, 0F),
+            quaternion.Euler(-(mpxItem.rotation + new Vector3(profile.WorldTilt, 0F, 0F)), math.RotationOrder.ZXY),
+            1F
+        );
+
+        // Create root entity
+        Entity itemRootEntity = entityManager.CreateEntity(ArchetypeItemRoot);
+        entityManager.SetComponentData(itemRootEntity, localTransform);
+        entityManager.GetBuffer<LinkedEntityGroup>(itemRootEntity).Add(itemRootEntity);
+
+        // Store runtime object data on the root entity
+        entityManager.SetComponentData(itemRootEntity,
+            new MapRuntimeItem
+            {
+                refId = new ReferenceID { type = 0, entity = 1, id = (ushort)index }
+            });
+
+        // We now must create an entity for each sub mesh...
+        for (int i = 0; i < mesh.subMeshCount; ++i)
+        {
+            Entity meshEntity = entityManager.CreateEntity(ArchetypeItemMesh);
+
+            // Link the hierarchy
+            entityManager.SetComponentData(meshEntity, new Parent { Value = itemRootEntity });
+            entityManager.SetComponentData(meshEntity, LocalTransform.Identity);
+
+            // Setup rendering components
+            entityManager.SetComponentData(meshEntity, new RenderBounds { Value = mesh.GetSubMesh(i).bounds.ToAABB() });
+            entityManager.SetSharedComponentManaged(meshEntity, renderMeshArray);
+            entityManager.SetSharedComponent(meshEntity, ItemRenderSettings);
+            entityManager.SetComponentData(meshEntity, MaterialMeshInfo.FromRenderMeshArrayIndices(model.MeshMaterialMapping[i], 0, (ushort)i));
+
+            // Add the child to the root's LinkedEntityGroup so it gets culled together
+            entityManager.GetBuffer<LinkedEntityGroup>(itemRootEntity).Add(meshEntity);
         }
     }
 

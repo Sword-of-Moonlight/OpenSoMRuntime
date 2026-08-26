@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
 
 using UnityEngine;
 
@@ -19,57 +18,6 @@ public class SomObjectRegistry : ScriptableObject
     ModelResource[] modelResource;
 
     /// <summary>
-    /// Gets data for a specific object, from its parameter id.
-    /// </summary>
-    public bool GetObjectData(int objectId, out SomObjectProfile profile, out SomObjectParameter parameter, out ModelResource model)
-    {
-        // Safty range check...
-        if (objectId >= ParameterCount || objectId < 0)
-            throw new ArgumentOutOfRangeException(nameof(objectId));
-
-        // Get parameter
-        parameter = Parameter[objectId];
-
-        // Get profile
-        profile   = Profile[parameter.ProfileId];
-
-        // Check if the model assossiated with this profile has been loaded yet...
-        if (modelResource[parameter.ProfileId] == null)
-        {
-            // Find the file path for the model...
-            if (!ResourceManager.Find(Path.Combine("DATA", "OBJ", "MODEL", profile.ModelFile), out string foundObjectModel))
-                throw new Exception("Failed to find object model!");
-
-            // Load the resource
-            ulong resourceName = ResourceManager.Load<ModelResource>(foundObjectModel, new ModelParameters 
-            { 
-                CreateDefaultMaterials = true, 
-                ModelType              = ModelParameterType.Static, 
-                TextureRootPath        = Path.Combine("DATA", "OBJ", "MODEL")
-            });
-
-            // We can now get and store a reference to the model here...
-            modelResource[parameter.ProfileId] = ResourceManager.Get<ModelResource>(resourceName);
-
-            // Here we check if the object should have scrolling textures...
-            if (modelResource[parameter.ProfileId].Materials != null && modelResource[parameter.ProfileId].Materials.Length > 1)
-            {
-                modelResource[parameter.ProfileId].Materials[1].SetVector("_ScrollParams", profile.ScrollMode switch
-                {
-                    SomObjectTextureScrollType.Horizontal => new Vector4(0F, -1F, 0F, 25F),
-                    SomObjectTextureScrollType.Vertical   => new Vector4(-1F, 0F, 25F, 0F),
-                    _                                     => Vector4.zero
-                });
-            }
-        }
-
-        // Get model
-        model = modelResource[parameter.ProfileId];
-
-        return true;
-    }
-
-    /// <summary>
     /// Load data for the object registry
     /// </summary>
     public void Load()
@@ -80,14 +28,13 @@ public class SomObjectRegistry : ScriptableObject
         else
             Logger.Critical("Couldn't find OBJ.PR2 file!");
 
+        modelResource = new ModelResource[ProfileCount];
+
         // Load object parameters
         if (ResourceManager.Find(Path.Combine("PARAM", "OBJ.PRM"), out string foundPRMFile))
             LoadParameterData(foundPRMFile);
         else
             Logger.Critical("Couldn't find OBJ.PRM file!");
-
-        // This array locally stores our object model data
-        modelResource = new ModelResource[ProfileCount];
     }
 
     /// <summary>
@@ -109,6 +56,57 @@ public class SomObjectRegistry : ScriptableObject
         // Clear out profile data
         ProfileCount = 0;
         Profile = null;
+    }
+
+    /// <summary>
+    /// Gets data for a specific object, from its parameter id.
+    /// </summary>
+    public bool GetData(int objectId, out SomObjectProfile profile, out SomObjectParameter parameter, out ModelResource model)
+    {
+        // Safty range check...
+        if (objectId >= ParameterCount || objectId < 0)
+            throw new ArgumentOutOfRangeException(nameof(objectId));
+
+        // Get parameter
+        parameter = Parameter[objectId];
+
+        // Get profile
+        profile = Profile[parameter.ProfileId];
+
+        // Check if the model assossiated with this profile has been loaded yet...
+        if (modelResource[parameter.ProfileId] == null)
+        {
+            // Find the file path for the model...
+            if (!ResourceManager.Find(Path.Combine("DATA", "OBJ", "MODEL", profile.ModelFile), out string foundModel))
+                throw new Exception($"Failed to find object model!\n Path = {Path.Combine("DATA", "OBJ", "MODEL", profile.ModelFile)}\n ID = {objectId}\n Prof ID = {parameter.ProfileId}");
+
+            // Load the resource
+            ulong resourceName = ResourceManager.Load<ModelResource>(foundModel, new ModelParameters
+            {
+                CreateDefaultMaterials = true,
+                ModelType = ModelParameterType.Static,
+                TextureRootPath = Path.Combine("DATA", "OBJ", "MODEL")
+            });
+
+            // We can now get and store a reference to the model here...
+            modelResource[parameter.ProfileId] = ResourceManager.Get<ModelResource>(resourceName);
+
+            // Here we check if the object should have scrolling textures...
+            if (modelResource[parameter.ProfileId].Materials != null && modelResource[parameter.ProfileId].Materials.Length > 1)
+            {
+                modelResource[parameter.ProfileId].Materials[1].SetVector("_ScrollParams", profile.ScrollMode switch
+                {
+                    SomObjectTextureScrollType.Horizontal => new Vector4(0F, -1F, 0F, 25F),
+                    SomObjectTextureScrollType.Vertical => new Vector4(-1F, 0F, 25F, 0F),
+                    _ => Vector4.zero
+                });
+            }
+        }
+
+        // Get model
+        model = modelResource[parameter.ProfileId];
+
+        return true;
     }
 
     /// <summary>

@@ -153,7 +153,7 @@ public partial class SoMEventFile
                 // When encountering a operation we don't understand yet, log it.
                 default:
                     fis.SeekRelative(PayloadSize);
-                    Logger.Critical($"Unknown EVT operation: 0x{OpCode:X4}, at 0x{fis.Position:X8}");
+                    // Logger.Critical($"Unknown EVT operation: 0x{OpCode:X4}, at 0x{fis.Position:X8}");
                     break;
             }
 

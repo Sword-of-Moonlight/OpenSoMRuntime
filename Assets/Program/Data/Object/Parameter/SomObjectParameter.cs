@@ -61,17 +61,6 @@ public unsafe struct SomObjectParameter
     }
 
     /// <summary>
-    /// Unknown data stored at offset 0x26 in each parameter (two bytes)
-    /// </summary>
-    public short UnknownX26
-    {
-        get
-        {
-            return unkx26;
-        }
-    }
-
-    /// <summary>
     /// Extended union type data stored depending on the type of object defined by the parent profile.
     /// </summary>
     public SomObjectParameterData Data

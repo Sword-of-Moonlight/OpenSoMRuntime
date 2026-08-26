@@ -19,11 +19,14 @@ public partial class FileInputStream : IDisposable
     /// <summary>The current byte size of the stream.</summary>
     public long Size => fstream.Length;
 
+    /// <summary>The source of the stream.</summary>
+    public string Source { get; private set; } = string.Empty;
+
     /// <summary>
     /// Constructs a new FileInputStream from a file.
     /// </summary>
     /// <param name="filepath">Path to the file</param>
-    public FileInputStream(string filepath) : this(File.OpenRead(filepath)) { }
+    public FileInputStream(string filepath) : this(File.OpenRead(filepath)) { Source = filepath; }
 
     /// <summary>
     /// Constructs a new FileInputStream from a byte array.
