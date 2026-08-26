@@ -159,6 +159,15 @@ public class WAVFormatHandler : FormatHandler<AudioResource>
                     for (int i = 0; i < sampleLength; ++i)
                         sampleBuffer[i] = BitConverter.ToSingle(byteBuffer, (bytesPerSample * i));
                     break;
+
+                /**
+                 * support needed for seaguard... How do we want to do this ? NLayer seems like an okay choice if we don't want to implement full MPEG decoding
+                 * 
+                // WAVE_FORMAT_MPEGLAYER3
+                case 0x0055:
+
+                    break;
+                **/
             }
         }
 
