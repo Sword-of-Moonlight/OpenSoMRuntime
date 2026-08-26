@@ -129,19 +129,28 @@ public class WAVFormatHandler : FormatHandler<AudioResource>
             {
                 // WAVE_FORMAT_PCM
                 case 0x0001:
-                    // What is the divisor for each sample
-                    float normaliser = 1 << (bitsPerSample - 1);
-                    int shift = 32 - (bitsPerSample);
-
-                    for (int i = 0; i < sampleLength; ++i)
+                    if (bitsPerSample == 8)
                     {
-                        // Read Sample
-                        int sample = 0;
+                        // U8 needs handling differently, sadly...
+                        for (int i = 0; i < sampleLength; ++i)
+                            sampleBuffer[i] = (byteBuffer[i] - 128f) / 128f;
+                    }
+                    else
+                    {
+                        // What is the divisor for each sample
+                        float normaliser = 1 << (bitsPerSample - 1);
+                        int shift        = 32 - bitsPerSample;
 
-                        for (int j = 0; j < bytesPerSample; j++)
-                            sample |= byteBuffer[(bytesPerSample * i) + j] << (8 * j);
+                        for (int i = 0; i < sampleLength; ++i)
+                        {
+                            // Read Sample
+                            int sample = 0;
 
-                        sampleBuffer[i] = ((sample << shift) >> shift) / normaliser;
+                            for (int j = 0; j < bytesPerSample; j++)
+                                sample |= byteBuffer[(bytesPerSample * i) + j] << (8 * j);
+
+                            sampleBuffer[i] = ((sample << shift) >> shift) / normaliser;
+                        }
                     }
                     break;
 
