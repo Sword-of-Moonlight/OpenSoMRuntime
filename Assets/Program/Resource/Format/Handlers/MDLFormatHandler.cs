@@ -342,10 +342,6 @@ public partial class MDLFormatHandler : FormatHandler<ModelResource>
                     Color32 unityColour   = new Color32(colour.R, colour.G, colour.B, colour.A);
                     Vector2 unityTexcoord = GetVertexUV(triangle, texcoord, texture, textureId);
 
-                    unityPosition *= 32f;
-                    unityPosition += Vector3.one;
-
-
                     // Processing the texture coordinate...
                     ModelStaticVertex unityVertex =
                         new ModelStaticVertex
