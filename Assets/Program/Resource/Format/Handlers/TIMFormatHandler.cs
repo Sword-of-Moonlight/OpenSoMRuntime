@@ -1,5 +1,6 @@
 using System;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
 
 public class TIMFormatHandler : FormatHandler<TextureResource>
@@ -71,12 +72,7 @@ public class TIMFormatHandler : FormatHandler<TextureResource>
             timClut = new Color32[(int)(timClutLoadW * timClutLoadH)];
 
             for (int i = 0; i < timClutLoadW * timClutLoadH; ++i)
-            {
-                // Read PSX colour...
-                ushort psxColour = finStream.ReadU16();
-
-                timClut[i] = new Color32((byte)(((psxColour >> 00) & 0x1F) << 3), (byte)(((psxColour >> 05) & 0x1F) << 3), (byte)(((psxColour >> 10) & 0x1F) << 3), 255);
-            }
+                timClut[i] = UnpackPSXColour(finStream.ReadU16());
         }
 
         // Surface
@@ -91,35 +87,32 @@ public class TIMFormatHandler : FormatHandler<TextureResource>
         //
         // Converting
         //
-        NativeArray<byte> imageBuffer;
+        NativeArray<Color32> imageBuffer;
         int imageWidth = 0, imageHeight = 0;
+        int srcRowOffset, dstRowOffset;
 
         switch (timMode & 0x3)
         {
             // Indexed (4 BPP)
             case 0:
                 // Create buffer for pixel data...
-                imageBuffer = new(4 * (int)((timSurfLoadW << 2) * timSurfLoadH), Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
                 imageWidth  = (int)timSurfLoadW << 2;
                 imageHeight = (int)timSurfLoadH;
+                imageBuffer = new NativeArray<Color32>(imageWidth * imageHeight, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
                 for (int y = 0; y < timSurfLoadH; ++y)
                 {
+                    srcRowOffset = (int)((timSurfLoadW << 0) * y);
+                    dstRowOffset = (int)((timSurfLoadW << 2) * y);
+
                     for (int x = 0; x < timSurfLoadW; ++x)
                     {
-                        // Four indices are packed per surface entry...
-                        ushort psxRaw = timSurf[(timSurfLoadW * y) + x];
+                        ushort psxPixels = timSurf[srcRowOffset + x];
 
-                        for (int i = 0; i < 4; ++i)
-                        {
-                            int bufferIndex = ((4 * imageWidth) * y) + (4 * (x << 2)) + (4 * i);
-                            Color32 colour  = timClut[(psxRaw >> (4 * i) & 0xF)];
-
-                            imageBuffer[bufferIndex + 0] = colour.r;
-                            imageBuffer[bufferIndex + 1] = colour.g;
-                            imageBuffer[bufferIndex + 2] = colour.b;
-                            imageBuffer[bufferIndex + 3] = colour.a;
-                        }
+                        imageBuffer[(dstRowOffset + (x << 2)) + 0] = timClut[(psxPixels >> 00) & 0xF];
+                        imageBuffer[(dstRowOffset + (x << 2)) + 1] = timClut[(psxPixels >> 04) & 0xF];
+                        imageBuffer[(dstRowOffset + (x << 2)) + 2] = timClut[(psxPixels >> 08) & 0xF];
+                        imageBuffer[(dstRowOffset + (x << 2)) + 3] = timClut[(psxPixels >> 12) & 0xF];
                     }
                 }
                 break;
@@ -127,53 +120,39 @@ public class TIMFormatHandler : FormatHandler<TextureResource>
             // Indexed (8 BPP)
             case 1:
                 // Create buffer for pixel data...
-                imageBuffer = new(4 * (int)((timSurfLoadW << 1) * timSurfLoadH), Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
                 imageWidth  = (int)timSurfLoadW << 1;
                 imageHeight = (int)timSurfLoadH;
+                imageBuffer = new NativeArray<Color32>(imageWidth * imageHeight, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
                 for (int y = 0; y < timSurfLoadH; ++y)
                 {
+                    srcRowOffset = (int)((timSurfLoadW << 0) * y);
+                    dstRowOffset = (int)((timSurfLoadW << 1) * y);
+
                     for (int x = 0; x < timSurfLoadW; ++x)
                     {
-                        // two indices are packed per surface entry...
-                        ushort psxRaw = timSurf[(timSurfLoadW * y) + x];
+                        ushort psxPixels = timSurf[srcRowOffset + x];
 
-                        for (int i = 0; i < 2; ++i)
-                        {
-                            int bufferIndex = ((4 * imageWidth) * y) + (4 * ((x << 1))) + (4 * i);
-                            Color32 colour = timClut[(psxRaw >> (8 * i) & 0xFF)];
-
-                            imageBuffer[bufferIndex + 0] = colour.r;
-                            imageBuffer[bufferIndex + 1] = colour.g;
-                            imageBuffer[bufferIndex + 2] = colour.b;
-                            imageBuffer[bufferIndex + 3] = colour.a;
-                        }
+                        imageBuffer[(dstRowOffset + (x << 1)) + 0] = timClut[(psxPixels >> 00) & 0xFF];
+                        imageBuffer[(dstRowOffset + (x << 1)) + 1] = timClut[(psxPixels >> 08) & 0xFF];
                     }
                 }
                 break;
 
             // Direct (15 BPP)
             case 2:
-                imageBuffer = new(4 * (int)(timSurfLoadW * timSurfLoadH), Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                // Create buffer for pixel data...
                 imageWidth  = (int)timSurfLoadW;
                 imageHeight = (int)timSurfLoadH;
+                imageBuffer = new NativeArray<Color32>(imageWidth * imageHeight, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
                 for (int y = 0; y < timSurfLoadH; ++y)
                 {
+                    srcRowOffset = (int)((timSurfLoadW << 0) * y);
+                    dstRowOffset = srcRowOffset;
+
                     for (int x = 0; x < timSurfLoadW; ++x)
-                    {
-
-                        int bufferIndex = (int)(4 * ((timSurfLoadW * y) + x));
-
-                        ushort psxPixel = timSurf[(timSurfLoadW * y) + x];
-
-                        Color32 colour = new Color32((byte)(((psxPixel >> 00) & 0x1F) << 3), (byte)(((psxPixel >> 05) & 0x1F) << 3), (byte)(((psxPixel >> 10) & 0x1F) << 3), 255);
-
-                        imageBuffer[bufferIndex + 0] = colour.r;
-                        imageBuffer[bufferIndex + 1] = colour.g;
-                        imageBuffer[bufferIndex + 2] = colour.b;
-                        imageBuffer[bufferIndex + 3] = colour.a;
-                    }
+                        imageBuffer[dstRowOffset + x] = UnpackPSXColour(timSurf[srcRowOffset + x]);
                 }
                 break;
 
@@ -188,8 +167,17 @@ public class TIMFormatHandler : FormatHandler<TextureResource>
         //
         // Storing
         //
-        resource.LoadPixels(imageBuffer, imageWidth, imageHeight);
+        resource.LoadPixels(imageBuffer.Reinterpret<byte>(UnsafeUtility.SizeOf<Color32>()), imageWidth, imageHeight);
 
         return true;
+    }
+
+    public Color32 UnpackPSXColour(ushort colour)
+    {
+        return new Color32(
+            (byte)((((colour >> 00) & 0x1F) << 3) | (((colour >> 00) & 0x1F) >> 2)),
+            (byte)((((colour >> 05) & 0x1F) << 3) | (((colour >> 05) & 0x1F) >> 2)),
+            (byte)((((colour >> 10) & 0x1F) << 3) | (((colour >> 10) & 0x1F) >> 2)),
+            255);
     }
 }
