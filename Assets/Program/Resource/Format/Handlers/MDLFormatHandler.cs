@@ -187,7 +187,7 @@ public partial class MDLFormatHandler : FormatHandler<ModelResource>
         textureId = -1;
 
         // We use this bit to tell that it will use no texture
-        if ((triangle.textureData & 0x10000) != 0)
+        if ((triangle.textureData & 0x10000) != 0 || tex == null)
             return;
 
         // First get the texture page offsets requested by the triangle
@@ -237,7 +237,7 @@ public partial class MDLFormatHandler : FormatHandler<ModelResource>
     Vector2 GetVertexUV(MDLTriangle triangle, MDLTexcoord texcoord, MDLTextureContext tex, int textureId)
     {
         // We use this bit to tell that it will use no texture
-        if ((triangle.textureData & 0x10000) != 0)
+        if ((triangle.textureData & 0x10000) != 0 || tex == null)
             return Vector2.zero;
 
         // First get the texture page offsets requested by the triangle
@@ -282,24 +282,27 @@ public partial class MDLFormatHandler : FormatHandler<ModelResource>
             colourEmissive  = new Color32(0, 0, 0, 0)
         });
 
-        // Per texture materials
-        for (int i = 0; i < texture.images.Count; ++i)
+        if (texture != null)
         {
-            MDLTextureContext.ImageData imageData = texture.images[i];
-
-            materials.Add(new ModelMaterialDefinition
+            // Per texture materials
+            for (int i = 0; i < texture.images.Count; ++i)
             {
-                textureMode = ModelMaterialTextureMode.Blob,
-                textureBlob = new ResourceBlob 
+                MDLTextureContext.ImageData imageData = texture.images[i];
+
+                materials.Add(new ModelMaterialDefinition
                 {
-                    Buffer        = imageData.raw, 
-                    VirtualOrigin = imageData.virtualName
-                },
-                textureFileName = ".tim",
-                blendMode       = ModelMaterialBlendMode.Default,
-                colourAlbedo    = Color.white,
-                colourEmissive  = new Color32(0, 0, 0, 0)
-            });
+                    textureMode = ModelMaterialTextureMode.Blob,
+                    textureBlob = new ResourceBlob
+                    {
+                        Buffer = imageData.raw,
+                        VirtualOrigin = imageData.virtualName
+                    },
+                    textureFileName = ".tim",
+                    blendMode = ModelMaterialBlendMode.Default,
+                    colourAlbedo = Color.white,
+                    colourEmissive = new Color32(0, 0, 0, 0)
+                });
+            }
         }
 
         resource.LoadMaterialDefinitions(materials.ToArray());
@@ -515,8 +518,6 @@ public partial class MDLFormatHandler : FormatHandler<ModelResource>
 
     static void ReadPrimitiveGT40(FileInputStream fis, MDLObjectContext context)
     {
-        Logger.Critical("Update GT40");
-
         // PSX Equivalent = GT4 (0x3c 0x00 0x08 0x0c)   !! USES INDEXED UVS !!
         MDLPrimitiveGT40 gt4 = fis.ReadStruct<MDLPrimitiveGT40>();
         MDLBlockUVS uvData  = context.UVBlocks[0][gt4.uvIndex];
@@ -530,21 +531,21 @@ public partial class MDLFormatHandler : FormatHandler<ModelResource>
         context.AddTriangles(
             new MDLTriangle
             {
-                vertexIndices   = (ulong)((gt4.vertex2 << 32) | (gt4.vertex1 << 16) | (gt4.vertex0 << 00)),
-                normalIndices   = (ulong)((gt4.normal2 << 32) | (gt4.normal1 << 16) | (gt4.normal0 << 00)),
-                colourIndices   = (ulong)((ci0 << 32) | (ci0 << 16) | (ci0 << 00)),
-                texcoordIndices = (ulong)((ti2 << 32) | (ti1 << 16) | (ti0 << 00)),
+                vertexIndices   = ((ulong)gt4.vertex2 << 32) | ((ulong)gt4.vertex1 << 16) | ((ulong)gt4.vertex0 << 00),
+                normalIndices   = ((ulong)gt4.normal2 << 32) | ((ulong)gt4.normal1 << 16) | ((ulong)gt4.normal0 << 00),
+                colourIndices   = ((ulong)ci0 << 32) | ((ulong)ci0 << 16) | ((ulong)ci0 << 00),
+                texcoordIndices = ((ulong)ti2 << 32) | ((ulong)ti1 << 16) | ((ulong)ti0 << 00),
                 textureData     = uvData.tsb
             },
             new MDLTriangle
             {
-                vertexIndices   = (ulong)((gt4.vertex1 << 32) | (gt4.vertex2 << 16) | (gt4.vertex3 << 00)),
-                normalIndices   = (ulong)((gt4.normal1 << 32) | (gt4.normal2 << 16) | (gt4.normal3 << 00)),
-                colourIndices   = (ulong)((ci0 << 32) | (ci0 << 16) | (ci0 << 00)),
-                texcoordIndices = (ulong)((ti1 << 32) | (ti2 << 16) | (ti3 << 00)),
+                vertexIndices   = ((ulong)gt4.vertex1 << 32) | ((ulong)gt4.vertex2 << 16) | ((ulong)gt4.vertex3 << 00),
+                normalIndices   = ((ulong)gt4.normal1 << 32) | ((ulong)gt4.normal2 << 16) | ((ulong)gt4.normal3 << 00),
+                colourIndices   = ((ulong)ci0 << 32) | ((ulong)ci0 << 16) | ((ulong)ci0 << 00),
+                texcoordIndices = ((ulong)ti1 << 32) | ((ulong)ti2 << 16) | ((ulong)ti3 << 00),
                 textureData     = uvData.tsb
             }
-        );
+        ); ;
     }
 
     static void ReadPrimitiveFT31(FileInputStream fis, MDLObjectContext context)
