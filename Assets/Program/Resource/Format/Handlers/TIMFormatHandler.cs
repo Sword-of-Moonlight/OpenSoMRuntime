@@ -1,0 +1,195 @@
+using System;
+using Unity.Collections;
+using UnityEngine;
+
+public class TIMFormatHandler : FormatHandler<TextureResource>
+{
+    public override FormatCapabilities Capabilities => new()
+    {
+        allowExport = false,
+        allowImport = true,
+        deprecated = false,
+        experimental = false
+    };
+
+    public override FormatMetadata Metadata => new()
+    {
+        name = "Sony PlayStation [T]exture [IM]age (*.TIM)",
+        description = "Sony PlayStation VRAM Slice. The format is essentially one or two buffers which are loaded directly to VRAM.",
+        version = "1.0",
+        authors = new string[] { "Sony", "SN Systems" },
+        extensions = new string[] { ".TIM" }
+    };
+
+    /// <summary>
+    /// Validates the content of a stream as an TIM file.
+    /// </summary>
+    /// <param name="finStream">A stream containing the data to check</param>
+    /// <returns>True if it is, false if it is not</returns>
+    public override bool Validate(FileInputStream finStream)
+    {
+        // TIM has a decent enough header for validation.
+        uint timTag = finStream.ReadU32();
+        uint timMode = finStream.ReadU32();
+
+        // We want to accumulate validation across multiple checks
+        bool valid = true;
+        valid &= ((timTag >> 00) & 0xFF) == 0x10;    // Tag should always be 0x10
+        valid &= ((timTag >> 08) & 0xFF) == 0x00;    // Version should always be 0
+        valid &= ((timTag >> 16) & 0xFF) == 0x0000;  // The last two bytes of the tag should always be 0, they are reserved.
+        valid &= (((timMode & 0x3) <= 1) & ((timMode & 0x8) != 0)) | ((timMode & 0x3) > 1);   // BPP 4 or 8 + has clut, or BMP is 15 or 24.
+
+        return valid;
+    }
+
+    /// <summary>
+    /// Parses an TIM file
+    /// </summary>
+    public override bool Load(FileInputStream finStream, in TextureResource resource, ResourceParameters parameters = null)
+    {
+        // The stream is reused from the validation pass, so it's good practice to seek to the start
+        finStream.SeekBegin(0);
+
+        //
+        // Reading
+        //
+
+        // Header
+        uint timTag = finStream.ReadU32();
+        uint timMode = finStream.ReadU32();
+
+        // Optional CLUT...
+        Color32[] timClut = null;
+        if ((timMode & 0x3) <= 1 || ((timMode & 0x8) != 0))
+        {
+            uint timClutBSize = finStream.ReadU32();
+            uint timClutLoadX = finStream.ReadU16();
+            uint timClutLoadY = finStream.ReadU16();
+            uint timClutLoadW = finStream.ReadU16();
+            uint timClutLoadH = finStream.ReadU16();
+
+            timClut = new Color32[(int)(timClutLoadW * timClutLoadH)];
+
+            for (int i = 0; i < timClutLoadW * timClutLoadH; ++i)
+            {
+                // Read PSX colour...
+                ushort psxColour = finStream.ReadU16();
+
+                timClut[i] = new Color32((byte)(((psxColour >> 00) & 0x1F) << 3), (byte)(((psxColour >> 05) & 0x1F) << 3), (byte)(((psxColour >> 10) & 0x1F) << 3), 255);
+            }
+        }
+
+        // Surface
+        uint timSurfBSize = finStream.ReadU32();
+        uint timSurfLoadX = finStream.ReadU16();
+        uint timSurfLoadY = finStream.ReadU16();
+        uint timSurfLoadW = finStream.ReadU16();
+        uint timSurfLoadH = finStream.ReadU16();
+
+        ushort[] timSurf = finStream.ReadU16Array((int)(timSurfLoadW * timSurfLoadH));
+
+        //
+        // Converting
+        //
+        NativeArray<byte> imageBuffer;
+        int imageWidth = 0, imageHeight = 0;
+
+        switch (timMode & 0x3)
+        {
+            // Indexed (4 BPP)
+            case 0:
+                // Create buffer for pixel data...
+                imageBuffer = new(4 * (int)((timSurfLoadW << 2) * timSurfLoadH), Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                imageWidth  = (int)timSurfLoadW << 2;
+                imageHeight = (int)timSurfLoadH;
+
+                for (int y = 0; y < timSurfLoadH; ++y)
+                {
+                    for (int x = 0; x < timSurfLoadW; ++x)
+                    {
+                        // Four indices are packed per surface entry...
+                        ushort psxRaw = timSurf[(timSurfLoadW * y) + x];
+
+                        for (int i = 0; i < 4; ++i)
+                        {
+                            int bufferIndex = ((4 * imageWidth) * y) + (4 * (x << 2)) + (4 * i);
+                            Color32 colour  = timClut[(psxRaw >> (4 * i) & 0xF)];
+
+                            imageBuffer[bufferIndex + 0] = colour.r;
+                            imageBuffer[bufferIndex + 1] = colour.g;
+                            imageBuffer[bufferIndex + 2] = colour.b;
+                            imageBuffer[bufferIndex + 3] = colour.a;
+                        }
+                    }
+                }
+                break;
+
+            // Indexed (8 BPP)
+            case 1:
+                // Create buffer for pixel data...
+                imageBuffer = new(4 * (int)((timSurfLoadW << 1) * timSurfLoadH), Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                imageWidth  = (int)timSurfLoadW << 1;
+                imageHeight = (int)timSurfLoadH;
+
+                for (int y = 0; y < timSurfLoadH; ++y)
+                {
+                    for (int x = 0; x < timSurfLoadW; ++x)
+                    {
+                        // two indices are packed per surface entry...
+                        ushort psxRaw = timSurf[(timSurfLoadW * y) + x];
+
+                        for (int i = 0; i < 2; ++i)
+                        {
+                            int bufferIndex = ((4 * imageWidth) * y) + (4 * ((x << 1))) + (4 * i);
+                            Color32 colour = timClut[(psxRaw >> (8 * i) & 0xFF)];
+
+                            imageBuffer[bufferIndex + 0] = colour.r;
+                            imageBuffer[bufferIndex + 1] = colour.g;
+                            imageBuffer[bufferIndex + 2] = colour.b;
+                            imageBuffer[bufferIndex + 3] = colour.a;
+                        }
+                    }
+                }
+                break;
+
+            // Direct (15 BPP)
+            case 2:
+                imageBuffer = new(4 * (int)(timSurfLoadW * timSurfLoadH), Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                imageWidth  = (int)timSurfLoadW;
+                imageHeight = (int)timSurfLoadH;
+
+                for (int y = 0; y < timSurfLoadH; ++y)
+                {
+                    for (int x = 0; x < timSurfLoadW; ++x)
+                    {
+
+                        int bufferIndex = (int)(4 * ((timSurfLoadW * y) + x));
+
+                        ushort psxPixel = timSurf[(timSurfLoadW * y) + x];
+
+                        Color32 colour = new Color32((byte)(((psxPixel >> 00) & 0x1F) << 3), (byte)(((psxPixel >> 05) & 0x1F) << 3), (byte)(((psxPixel >> 10) & 0x1F) << 3), 255);
+
+                        imageBuffer[bufferIndex + 0] = colour.r;
+                        imageBuffer[bufferIndex + 1] = colour.g;
+                        imageBuffer[bufferIndex + 2] = colour.b;
+                        imageBuffer[bufferIndex + 3] = colour.a;
+                    }
+                }
+                break;
+
+            // Direct (24 BPP)
+            case 3:
+                throw new Exception("24-bit TIM files are unsupported.");
+
+            default:
+                throw new NotImplementedException("Unknown and literally impossible TIM bpp.");
+        }
+
+        //
+        // Storing
+        //
+        resource.LoadPixels(imageBuffer, imageWidth, imageHeight);
+
+        return true;
+    }
+}

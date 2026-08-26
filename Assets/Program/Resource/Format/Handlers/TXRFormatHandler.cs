@@ -5,9 +5,9 @@ public class TXRFormatHandler : FormatHandler<TextureResource>
 {
     public override FormatCapabilities Capabilities => new()
     {
-        allowExport  = false,
-        allowImport  = true,
-        deprecated   = false, 
+        allowExport = false,
+        allowImport = true,
+        deprecated = false,
         experimental = false
     };
 
@@ -34,7 +34,7 @@ public class TXRFormatHandler : FormatHandler<TextureResource>
         {
             // Check agaisnt all valid BPPs... It's the best we can do.
             0x01 or 0x04 or 0x08 or 0x10 or 0x18 or 0x20 => true,
-            _                                            => false
+            _ => false
         };
     }
 
@@ -51,10 +51,10 @@ public class TXRFormatHandler : FormatHandler<TextureResource>
         //
 
         // TXR has a minimal header...
-        int txrWidth  = finStream.ReadS32();
+        int txrWidth = finStream.ReadS32();
         int txrHeight = finStream.ReadS32();
-        int txrBPP    = finStream.ReadS32();
-        int txrMips   = finStream.ReadS32();    // We don't bother reading these. We can generate better mip maps in 2024
+        int txrBPP = finStream.ReadS32();
+        int txrMips = finStream.ReadS32();    // We don't bother reading these. We can generate better mip maps in 2024
 
         // Calculate the size of a row
         int rowStride = 4 * txrWidth;
@@ -68,7 +68,7 @@ public class TXRFormatHandler : FormatHandler<TextureResource>
             case <= 8:
                 // Indexed images have a CLUT present. Read the CLUT.
                 int txrClutSize = 1 << txrBPP;
-                uint[] txrClut  = new uint[txrClutSize];
+                uint[] txrClut = new uint[txrClutSize];
 
                 for (int i = 0; i < txrClutSize; ++i)
                     txrClut[i] = finStream.ReadU32();
@@ -77,7 +77,7 @@ public class TXRFormatHandler : FormatHandler<TextureResource>
                 int pixelsPerByte = (8 / txrBPP);               // 1, 2 or 8 pixels.
                 int pixelMask = (1 << txrBPP) - 1;              // 0x1, 0x3 or 0x1F
                 int pixelShift = txrBPP * (pixelsPerByte - 1);  // Calculate our starting shift amount
-                    
+
                 uint pixelData, clutData;
                 int rowPosition, rowColumnOffset, shiftRegister;
                 int widthMinX, packedCount;
@@ -112,7 +112,7 @@ public class TXRFormatHandler : FormatHandler<TextureResource>
                         }
                     }
                 }
-                break; 
+                break;
 
             case 16: throw new Exception("16-bit TXR files are unsupported.");
 

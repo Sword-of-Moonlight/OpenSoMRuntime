@@ -10,6 +10,7 @@ public class TextureFactory : ResourceFactory<TextureResource>
     {
         RegisterFormatHandler(new BMPFormatHandler());
         RegisterFormatHandler(new TXRFormatHandler());
+        RegisterFormatHandler(new TIMFormatHandler());
     }
 
     public override ulong Load(string path, ResourceParameters parameters = null)

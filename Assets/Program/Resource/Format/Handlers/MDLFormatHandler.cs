@@ -1,11 +1,11 @@
 using UnityEngine;
 
 using System;
-using System.IO;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.IO;
 
-public class MDLFormatHandler : FormatHandler<ModelResource>
+public partial class MDLFormatHandler : FormatHandler<ModelResource>
 {
     public override FormatCapabilities Capabilities => new()
     {
@@ -37,6 +37,7 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
         MDLHeader headerData = fis.ReadStruct<MDLHeader>();
 
         streamIsMDL &= ((byte)headerData.flags & 0xF0) == 0;        // Only supported flags are set...
+        streamIsMDL &= (headerData.meshDataSize > 0);               // Must be some mesh data...
 
         return streamIsMDL;
     }
@@ -85,6 +86,23 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
             mdlUVBlocks[i] = fis.ReadStructArray<MDLBlockUVS>(mdlUVEntries);
         }
 
+        // MDL Texture Data
+        MDLTextureContext mdlTextureContext = null;
+
+        if (mdlHeader.numInternalTexture > 0)
+        {
+            mdlTextureContext = new MDLTextureContext();
+
+            // Seek to start of texture data...
+            fis.Jump(0x10 + (4 * (mdlHeader.meshDataSize + mdlHeader.vertexAnimDataSize + mdlHeader.skeletonAnimDataSize)));
+
+            // All MDL textures are stored as TIM.
+            for (int i = 0; i < mdlHeader.numInternalTexture; ++i)
+                mdlTextureContext.LoadImage(fis);
+
+            fis.Return();
+        }
+
         // Parse each MDL Object
         MDLObjectContext[] mdlObjectContexts = new MDLObjectContext[mdlObjects.Length];
 
@@ -95,12 +113,12 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
 
             // Read Object Vertices
             fis.Jump(mdlObject.vertexBase);
-            MDLSVector[] mdlObjectVertices = fis.ReadStructArray<MDLSVector>(mdlObject.vertexNum);
+            MDLVector[] mdlObjectVertices = fis.ReadStructArray<MDLVector>(mdlObject.vertexNum);
             fis.Return();
 
             // Read Object Normals
             fis.Jump(mdlObject.normalBase);
-            MDLSVector[] mdlObjectNormals  = fis.ReadStructArray<MDLSVector>(mdlObject.normalNum);
+            MDLVector[] mdlObjectNormals  = fis.ReadStructArray<MDLVector>(mdlObject.normalNum);
             fis.Return();
 
             // We now create a context object to aid in parsing MDL data
@@ -120,22 +138,20 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
 
                 // Read the block tag.
                 // All primitives under this tag will be identical in type.
-                MDLBlockPrimitiveTag primitiveBlockTag = fis.ReadStruct<MDLBlockPrimitiveTag>();
+                MDLPrimitiveTag primitiveBlockTag = fis.ReadStruct<MDLPrimitiveTag>();
 
-                for (int j = 0; j < primitiveBlockTag.count; ++j)
+                try
                 {
                     if (primitiveBlockTag.type > PrimitiveReadFunc.Length)
-                        throw new Exception($"Unknown MDL Primitive Type: {primitiveBlockTag.type:X4}");
+                        throw new Exception();
 
-                    // Read primitive data for type
-                    try
-                    {
+                    for (int j = 0; j < primitiveBlockTag.count; ++j)
                         PrimitiveReadFunc[primitiveBlockTag.type](fis, mdlObjectContext);
-                    } catch
-                    {
-                        Logger.Critical($"Unsupported Primitive Type '0x{primitiveBlockTag.type:X4}' at offset = 0x{fis.Position:X8}");
-                        return false;
-                    }
+                } 
+                catch
+                {
+                    Logger.Critical($"Unsupported Primitive Type '0x{primitiveBlockTag.type:X4}' at offset = 0x{fis.Position:X8}");
+                    return false;
                 }
 
                 // Decrement the total primitive count with each primitive from a sub block we read
@@ -149,141 +165,259 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
             mdlObjectContexts[i] = mdlObjectContext;
         }
 
-        //
-        // MDL Texture Data
-        //
-        if (mdlHeader.numInternalTexture > 0)
-        {
-            // Seek to start of texture data...
-            fis.SeekBegin(4 * (mdlHeader.meshDataSize + mdlHeader.vertexAnimDataSize + mdlHeader.skeletonAnimDataSize));
-        }
+        /**
+         * Parse mesh data
+        **/
+        if (mdlHeader.numVertexAnim == 0 && mdlHeader.numSkeletalAnim == 0)
+            ParseStaticMeshes(resource, mdlObjectContexts, mdlTextureContext);
+        else
+            ParseAnimatedMeshes(resource, mdlObjectContexts, mdlTextureContext);
 
-        //
-        // Pass #1 - Build Mesh Data
-        //
-        List<ModelMaterialDefinition> unityMaterialData = new List<ModelMaterialDefinition>();
-        List<ModelMeshDefinition> unityMeshData         = new List<ModelMeshDefinition>();
-        List<ModelStaticVertex> unityVertexData         = new List<ModelStaticVertex>();
-        List<ushort> unityIndexData                     = new List<ushort>();
-
-        // Add default material...
-        unityMaterialData.Add(new ModelMaterialDefinition { textureFileName = string.Empty, blendMode = ModelMaterialBlendMode.Default, colourAlbedo = Color.white, colourEmissive = Color.black });
-
-        for (int i = 0; i < mdlObjectContexts.Length; ++i)
-        {
-            // Get context
-            MDLObjectContext objectContext = mdlObjectContexts[i];
-
-            int startIndex = unityIndexData.Count;
-
-            // We must go through each triangle...
-            for (int j = 0; j < objectContext.Triangles.Count; ++j)
-            {
-                // Get Triangle
-                MDLTriangle mdlTriangle = objectContext.Triangles[j];
-
-                // Prepare...
-                MDLSVector vPosition, vNormal;
-                MDLColour vColour;
-                MDLTexcoord vTexcoord;
-
-                // Vertex 1
-                vPosition = objectContext.Vertices[mdlTriangle.VI0];
-                vNormal   = objectContext.Normals[mdlTriangle.NI0];
-                vColour   = objectContext.Colours[mdlTriangle.CI0];
-                vTexcoord = objectContext.Texcoords[mdlTriangle.TI0];
-
-                unityVertexData.Add(
-                    new ModelStaticVertex
-                    {
-                        position = new Vector3(vPosition.VX / 1024F, -vPosition.VY / 1024F, vPosition.VZ / 1024F),
-                        normal   = ModelResource.PackNormal1010102(new Vector3(vNormal.VX / 4096F, -vNormal.VY / 4096F, vNormal.VZ / 4096F).normalized),
-                        colour   = new Color32(vColour.R, vColour.G, vColour.B, vColour.A),
-                        texcoord = new Vector2(vTexcoord.U / 255F, vTexcoord.V / 255F)
-                    });
-
-                unityIndexData.Add((ushort)(unityVertexData.Count - 1));
-
-                // Vertex 2
-                vPosition = objectContext.Vertices[mdlTriangle.VI1];
-                vNormal   = objectContext.Normals[mdlTriangle.NI1];
-                vColour   = objectContext.Colours[mdlTriangle.CI1];
-                vTexcoord = objectContext.Texcoords[mdlTriangle.TI1];
-
-                unityVertexData.Add(
-                    new ModelStaticVertex
-                    {
-                        position = new Vector3(vPosition.VX / 1024F, -vPosition.VY / 1024F, vPosition.VZ / 1024F),
-                        normal   = ModelResource.PackNormal1010102(new Vector3(vNormal.VX / 4096F, -vNormal.VY / 4096F, vNormal.VZ / 4096F).normalized),
-                        colour   = new Color32(vColour.R, vColour.G, vColour.B, vColour.A),
-                        texcoord = new Vector2(vTexcoord.U / 255F, vTexcoord.V / 255F)
-                    });
-
-                unityIndexData.Add((ushort)(unityVertexData.Count - 1));
-
-                // Vertex 3
-                vPosition = objectContext.Vertices[mdlTriangle.VI2];
-                vNormal   = objectContext.Normals[mdlTriangle.NI2];
-                vColour   = objectContext.Colours[mdlTriangle.CI2];
-                vTexcoord = objectContext.Texcoords[mdlTriangle.TI2];
-
-                unityVertexData.Add(
-                    new ModelStaticVertex
-                    {
-                        position = new Vector3(vPosition.VX / 1024F, -vPosition.VY / 1024F, vPosition.VZ / 1024F),
-                        normal   = ModelResource.PackNormal1010102(new Vector3(vNormal.VX / 4096F, -vNormal.VY / 4096F, vNormal.VZ / 4096F).normalized),
-                        colour   = new Color32(vColour.R, vColour.G, vColour.B, vColour.A),
-                        texcoord = new Vector2(vTexcoord.U / 255F, vTexcoord.V / 255F)
-                    });
-
-                unityIndexData.Add((ushort)(unityVertexData.Count - 1));
-            }
-
-            // Define the mesh
-            unityMeshData.Add(new ModelMeshDefinition
-            {
-                materialID = 0,
-                indexCount = objectContext.Triangles.Count * 3,
-                indexStart = startIndex
-            });
-        }
-
-        //
-        // Loading data into the resource
-        //
-        resource.LoadStaticVertexData(unityVertexData.ToArray());
-        resource.LoadIndexData(unityIndexData.ToArray());
-        resource.LoadMaterialDefinitions(unityMaterialData.ToArray());
-        resource.LoadMeshDefinitions(unityMeshData.ToArray());
         resource.LoadComplete();
 
         return true;
     }
 
+    /// <summary>
+    /// Gets a Texture-Material Id from a MDL Triangle, an MDL Object and the MDL Texture Data
+    /// </summary>
+    void GetTriangleMaterialId(MDLTriangle triangle, MDLObjectContext obj, MDLTextureContext tex, out int materialId, out int textureId)
+    {
+        materialId = 0;
+        textureId = -1;
+
+        // We use this bit to tell that it will use no texture
+        if ((triangle.textureData & 0x10000) != 0)
+            return;
+
+        // First get the texture page offsets requested by the triangle
+        int tpageX = 64  * (int)((triangle.textureData & 0x0F) >> 0);
+        int tpageY = 256 * (int)((triangle.textureData & 0x10) >> 4);
+        int tbpp   = (int)(triangle.textureData >> 7) & 0x3;
+
+        // We can now get the first UV, which is the only one used in the texture Id calculation in SoM.
+        // These are offset with the base tpage position
+        int pu = tbpp switch
+        {
+            0 => obj.Texcoords[(int)(triangle.texcoordIndices & 0xFFFFUL)].U >> 2,
+            1 => obj.Texcoords[(int)(triangle.texcoordIndices & 0xFFFFUL)].U >> 1,
+            _ => obj.Texcoords[(int)(triangle.texcoordIndices & 0xFFFFUL)].U
+        };
+        pu += tpageX;
+
+        int pv   = obj.Texcoords[(int)(triangle.texcoordIndices & 0xFFFFUL)].V;
+        pv += tpageY;
+
+        // Okay... Now we need to do a rectangle test on our textures.
+        // SoM starts with the last texture in the list, so we will too...
+        for (int i = tex.images.Count - 1; i >= 0; --i)
+        {
+            materialId = 1 + i; 
+            textureId  = i;
+
+            // Getting texture data...
+            MDLTextureContext.ImageData imageData = tex.images[textureId];
+
+            int loadX = imageData.dataSurface.loadX;
+            int loadY = imageData.dataSurface.loadY;
+            int loadW = imageData.dataSurface.loadW;
+            int loadH = imageData.dataSurface.loadH;
+
+            if ((loadX <= pu) && (pu < loadW + loadX) && (loadY <= pv) && (pv < loadH + loadY))
+                return;
+        }
+
+        materialId = 1;
+        textureId  = 0;
+    }
+   
+    /// <summary>
+    /// Modifies a raw MDL UV to fit the texture applied to it.
+    /// </summary>
+    Vector2 GetVertexUV(MDLTriangle triangle, MDLTexcoord texcoord, MDLTextureContext tex, int textureId)
+    {
+        // We use this bit to tell that it will use no texture
+        if ((triangle.textureData & 0x10000) != 0)
+            return Vector2.zero;
+
+        // First get the texture page offsets requested by the triangle
+        int tpageX = 64  * (int)((triangle.textureData & 0x0F) >> 0);
+        int tpageY = 256 * (int)((triangle.textureData & 0x10) >> 4);
+        int tbpp   = (int)(triangle.textureData >> 7) & 0x3;
+
+        // Now run the actual calculations...
+        Vector2 uv = new Vector2(tpageX, tpageY);
+
+        uv.x += tbpp switch
+        {
+            0 => texcoord.U * 0.25F,
+            1 => texcoord.U * 0.50F,
+            _ => texcoord.U
+        };
+
+        uv.y += texcoord.V;
+
+        // Now we run the scaling by the texture...
+        uv.x = (uv.x - tex.images[textureId].dataSurface.loadX) / (float)tex.images[textureId].dataSurface.loadW;
+        uv.y = (uv.y - tex.images[textureId].dataSurface.loadY) / (float)tex.images[textureId].dataSurface.loadH;
+
+        return uv;
+    }
+
+    void ParseStaticMeshes(ModelResource resource, MDLObjectContext[] objects, MDLTextureContext texture)
+    {
+        // Create material list
+        // This part should actually be done inside the meshing loop, and account for the blend mode
+        // info provided in each MDL Prim.
+        List<ModelMaterialDefinition> materials       = new List<ModelMaterialDefinition>();
+
+        // Default "No Texture" material
+        materials.Add(new ModelMaterialDefinition
+        {
+            textureMode     = ModelMaterialTextureMode.None,
+            textureBlob     = null,
+            textureFileName = string.Empty,
+            blendMode       = ModelMaterialBlendMode.Default,
+            colourAlbedo    = Color.white,
+            colourEmissive  = new Color32(0, 0, 0, 0)
+        });
+
+        // Per texture materials
+        for (int i = 0; i < texture.images.Count; ++i)
+        {
+            MDLTextureContext.ImageData imageData = texture.images[i];
+
+            materials.Add(new ModelMaterialDefinition
+            {
+                textureMode = ModelMaterialTextureMode.Blob,
+                textureBlob = new ResourceBlob 
+                {
+                    Buffer        = imageData.raw, 
+                    VirtualOrigin = imageData.virtualName
+                },
+                textureFileName = ".tim",
+                blendMode       = ModelMaterialBlendMode.Default,
+                colourAlbedo    = Color.white,
+                colourEmissive  = new Color32(0, 0, 0, 0)
+            });
+        }
+
+        resource.LoadMaterialDefinitions(materials.ToArray());
+
+        // Parsing mesh data
+        // Total bloody mess
+        Dictionary<int, (int, List<ModelStaticVertex>, List<ushort>)> meshes = new Dictionary<int, (int, List<ModelStaticVertex>, List<ushort>)>();
+
+        // Parsing of actual mesh data
+        foreach (MDLObjectContext context in objects)
+        {
+            // We must loop over each triangle in the MDL...
+            for (int i = 0; i < context.Triangles.Count; ++i)
+            {
+                // Get MDL Triangle data...
+                MDLTriangle triangle = context.Triangles[i];
+
+                // Figure out the material ID for the triangle...
+                GetTriangleMaterialId(triangle, context, texture, out int materialId, out int textureId);
+
+                // We'll get mesh data for
+                if (!meshes.TryGetValue(materialId, out (int, List<ModelStaticVertex>, List<ushort>) mesh))
+                {
+                    mesh = (materialId, new List<ModelStaticVertex>(), new List<ushort>());
+                    mesh.Item1 = materialId;
+                }
+
+                // Get each index, convert it into the actual data...
+                for (int j = 0; j < 3; ++j)
+                {
+                    // Getting the vertex data for the current index (j)
+                    MDLVector position = context.Vertices[(int)((triangle.vertexIndices >> (16 * j)) & 0xFFFFUL)];
+                    MDLVector normal = context.Normals[(int)((triangle.normalIndices >> (16 * j)) & 0xFFFFUL)];
+                    MDLColour colour = context.Colours[(int)((triangle.colourIndices >> (16 * j)) & 0xFFFFUL)];
+                    MDLTexcoord texcoord = context.Texcoords[(int)((triangle.texcoordIndices >> (16 * j)) & 0xFFFFUL)];
+
+                    // We now handle the conversion of this vertices data...
+                    Vector3 unityPosition = new Vector3(position.VX / 1024F, -position.VY / 1024F, position.VZ / 1024F);
+                    Vector3 unityNormal   = new Vector3(normal.VX, -normal.VY, normal.VZ).normalized; // SoM also does this instead of dividing each component by 4096...
+                    Color32 unityColour   = new Color32(colour.R, colour.G, colour.B, colour.A);
+                    Vector2 unityTexcoord = GetVertexUV(triangle, texcoord, texture, textureId);
+
+                    unityPosition *= 32f;
+                    unityPosition += Vector3.one;
+
+
+                    // Processing the texture coordinate...
+                    ModelStaticVertex unityVertex =
+                        new ModelStaticVertex
+                        {
+                            position = unityPosition,
+                            normal   = ModelResource.PackNormal1010102(unityNormal),
+                            colour   = unityColour,
+                            texcoord = unityTexcoord
+                        };
+
+                    mesh.Item2.Add(unityVertex);
+                    mesh.Item3.Add((ushort)(mesh.Item2.Count - 1));
+                }
+
+                // Store in meshes list
+                meshes[materialId] = mesh;
+            }
+        }
+
+        // Now the meshes have been pharsed, we can place them into our ModelResource...
+        List<ModelMeshDefinition> meshDefs = new List<ModelMeshDefinition>();
+        List<ModelStaticVertex> vertices   = new List<ModelStaticVertex>();
+        List<ushort> indices               = new List<ushort>();
+
+        foreach (KeyValuePair<int, (int, List<ModelStaticVertex>, List<ushort>)> kvp in meshes)
+        {
+            meshDefs.Add(new ModelMeshDefinition
+            {
+                indexStart = indices.Count,
+                indexCount = kvp.Value.Item3.Count,
+                materialID = kvp.Value.Item1
+            });
+
+            for (int i = 0; i < kvp.Value.Item3.Count; ++i)
+                indices.Add((ushort)(vertices.Count + kvp.Value.Item3[i]));
+
+            vertices.AddRange(kvp.Value.Item2);
+        }
+
+        resource.LoadStaticVertexData(vertices.ToArray());
+        resource.LoadIndexData(indices.ToArray());
+        resource.LoadMeshDefinitions(meshDefs.ToArray());
+    }
+
+    void ParseAnimatedMeshes(ModelResource resource, MDLObjectContext[] objects, MDLTextureContext texture) =>
+        ParseStaticMeshes(resource, objects, texture);
+
+
     #region MDL Primitive Read Helper
     Action<FileInputStream, MDLObjectContext>[] PrimitiveReadFunc = new Action<FileInputStream, MDLObjectContext>[]
     {
         // Named primitive types    - These are ones that names could be found for (from MapComp)
-        ReadPrimitiveFC30,   // FC30             Flat, Colour, Tri                   Used for CPs
+        ReadPrimitiveFC30,   // FC30             Flat, Colour, Tri
         ReadPrimitiveFT30,   // FT30             Flat, Texture, Tri
-        ReadPrimitiveStub,   // FG30             Flat, Gradiant, Tri
+        ReadPrimitiveStub,   // FG30             Flat, Gradiant, Tri                Unused in SoM (though it does support skipping over them...)
 
         ReadPrimitiveStub,   // GC30             Smooth, Colour, Tri
         ReadPrimitiveGT30,   // GT30             Smooth, Texture, Tri   
-        ReadPrimitiveStub,   // GG30             Smooth, Gradiant, Tri
+        ReadPrimitiveStub,   // GG30             Smooth, Gradiant, Tri              Unused in SoM (though it does support skipping over them...)
 
         ReadPrimitiveStub,   // FC40             Flat, Colour, Quad
         ReadPrimitiveFT40,   // FT40             Flat, Texture, Quad
-        ReadPrimitiveStub,   // FG40             Flat, Gradiant, Quad
+        ReadPrimitiveStub,   // FG40             Flat, Gradiant, Quad               Unused in SoM (though it does support skipping over them...)
 
         ReadPrimitiveStub,   // GC40             Smooth, Colour, Quad
         ReadPrimitiveGT40,   // GT40             Smooth, Texture, Quad
         ReadPrimitiveStub,   // GG40             Smooth, Gradiant, Quad
 
-        ReadPrimitiveStub,   // GT31             Flat, Texture, Tri, Unlit           Not supported by som_rt? (it's null)
-        ReadPrimitiveFT31,   // FT31             Smooth, Texture, Tri, Unlit
-        ReadPrimitiveStub,   // GT41             Flat, Texture, Quad, Unlit          Not supported by som_rt? (it's null)
-        ReadPrimitiveStub,   // FT41             Smooth, Texture, Quad, Unlit 
+        ReadPrimitiveStub,   // FT31             Flat, Texture, Tri, Unlit           Not supported by som_rt? (it's null)
+        ReadPrimitiveFT31,   // GT31             Smooth, Texture, Tri, Unlit
+        ReadPrimitiveStub,   // FT41             Flat, Texture, Quad, Unlit          Not supported by som_rt? (it's null)
+        ReadPrimitiveStub,   // GT41             Smooth, Texture, Quad, Unlit 
 
         // Unnamed primitive types
         ReadPrimitiveStub,   // ----UV           ? ? ? ? ? ?, External UV            Not supported by som_rt? (it's null)
@@ -295,318 +429,212 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
     static void ReadPrimitiveFC30(FileInputStream fis, MDLObjectContext context)
     {
         // PSX Equivalent = FC3 (0x20 0x00 0x03 0x04)
+        MDLPrimitiveFC30 fc3 = fis.ReadStruct<MDLPrimitiveFC30>();
 
-        byte CR0  = fis.ReadU8();
-        byte CG0  = fis.ReadU8();
-        byte CB0  = fis.ReadU8();
-        byte mode = fis.ReadU8();
-        short NI0 = fis.ReadS16();
-        short VI0 = fis.ReadS16();
-        short VI1 = fis.ReadS16();
-        short VI2 = fis.ReadS16();
-
-        short CI0 = context.AddUniqueColour(new MDLColour { R = CR0, G = CG0, B = CB0, A = (byte)((mode & 0x02) > 0 ? 255 : 127) });
-        short TI0 = context.AddUniqueTexcoord(new MDLTexcoord { U = 0, V = 0 });
+        ushort ci0 = context.AddUniqueColour(new MDLColour { R = fc3.red, G = fc3.green, B = fc3.blue, A = 255 });
+        ushort ti0 = context.AddUniqueTexcoord(new MDLTexcoord { U = 0, V = 0 });
 
         context.AddTriangles(
-            new MDLTriangle { VI0 = VI0, VI1 = VI1, VI2 = VI2, NI0 = NI0, NI1 = NI0, NI2 = NI0, CI0 = CI0, CI1 = CI0, CI2 = CI0, TI0 = TI0, TI1 = TI0, TI2 = TI0 }
-            );
+            new MDLTriangle {
+                vertexIndices   = ((ulong)fc3.vertex2 << 32) | ((ulong)fc3.vertex1 << 16) | ((ulong)fc3.vertex0 << 00),
+                normalIndices   = ((ulong)fc3.normal0 << 32) | ((ulong)fc3.normal0 << 16) | ((ulong)fc3.normal0 << 00),
+                colourIndices   = ((ulong)ci0 << 32) | ((ulong)ci0 << 16) | ((ulong)ci0 << 00),
+                texcoordIndices = ((ulong)ti0 << 32) | ((ulong)ti0 << 16) | ((ulong)ti0 << 00),
+                textureData     = 0x10000
+            }
+        );;
     }
 
     static void ReadPrimitiveFT30(FileInputStream fis, MDLObjectContext context)
     {
-        // PSX Equivalent = GT3 (0x24 0x00 0x05 0x07)
+        // PSX Equivalent = FT3 (0x24 0x00 0x05 0x07)
+        MDLPrimitiveFT30 ft3 = fis.ReadStruct<MDLPrimitiveFT30>();
 
-        byte TU0 = fis.ReadU8();
-        byte TV0 = fis.ReadU8();
-        ushort CBA = fis.ReadU16();
-
-        byte TU1 = fis.ReadU8();
-        byte TV1 = fis.ReadU8();
-        ushort TSB = fis.ReadU16();
-
-        byte TU2 = fis.ReadU8();
-        byte TV2 = fis.ReadU8();
-        ushort UNK = fis.ReadU16();
-
-        short NI0 = fis.ReadS16();
-        short VI0 = fis.ReadS16();
-        short VI1 = fis.ReadS16();
-        short VI2 = fis.ReadS16();
-
-        short CI0 = context.AddUniqueColour(new MDLColour { R = 255, G = 255, B = 255, A = 255 });
-
-        short TI0 = context.AddUniqueTexcoord(new MDLTexcoord { U = TU0, V = TV0 });
-        short TI1 = context.AddUniqueTexcoord(new MDLTexcoord { U = TU1, V = TV1 });
-        short TI2 = context.AddUniqueTexcoord(new MDLTexcoord { U = TU2, V = TV2 });
+        ushort ci0 = context.AddUniqueColour(new MDLColour { R = 255, G = 255, B = 255, A = 255 });
+        ushort ti0 = context.AddUniqueTexcoord(new MDLTexcoord { U = ft3.u0, V = ft3.v0 });
+        ushort ti1 = context.AddUniqueTexcoord(new MDLTexcoord { U = ft3.u1, V = ft3.v1 });
+        ushort ti2 = context.AddUniqueTexcoord(new MDLTexcoord { U = ft3.u2, V = ft3.v2 });
 
         context.AddTriangles(
-            new MDLTriangle { VI0 = VI0, VI1 = VI1, VI2 = VI2, NI0 = NI0, NI1 = NI0, NI2 = NI0, CI0 = CI0, CI1 = CI0, CI2 = CI0, TI0 = TI0, TI1 = TI1, TI2 = TI2 }
-            );
+            new MDLTriangle {
+                vertexIndices   = ((ulong)ft3.vertex2 << 32) | ((ulong)ft3.vertex1 << 16) | ((ulong)ft3.vertex0 << 00),
+                normalIndices   = ((ulong)ft3.normal0 << 32) | ((ulong)ft3.normal0 << 16) | ((ulong)ft3.normal0 << 00),
+                colourIndices   = ((ulong)ci0 << 32) | ((ulong)ci0 << 16) | ((ulong)ci0 << 00),
+                texcoordIndices = ((ulong)ti2 << 32) | ((ulong)ti1 << 16) | ((ulong)ti0 << 00),
+                textureData     = ft3.tsb
+            }
+        );
     }
 
     static void ReadPrimitiveGT30(FileInputStream fis, MDLObjectContext context)
     {
         // PSX Equivalent = GT3 (0x34 0x00 0x06 0x09)
+        MDLPrimitiveGT30 gt3 = fis.ReadStruct<MDLPrimitiveGT30>();
 
-        byte TU0   = fis.ReadU8();
-        byte TV0   = fis.ReadU8();
-        ushort CBA = fis.ReadU16();
-
-        byte TU1   = fis.ReadU8();
-        byte TV1   = fis.ReadU8();
-        ushort TSB = fis.ReadU16();
-
-        byte TU2   = fis.ReadU8();
-        byte TV2   = fis.ReadU8();
-        ushort UNK = fis.ReadU16();
-
-        short NI0  = fis.ReadS16();
-        short VI0  = fis.ReadS16();
-        short NI1  = fis.ReadS16();
-        short VI1  = fis.ReadS16();
-        short NI2  = fis.ReadS16();
-        short VI2  = fis.ReadS16();
-
-        short CI0 = context.AddUniqueColour(new MDLColour { R = 255, G = 255, B = 255, A = 255 });
-
-        short TI0 = context.AddUniqueTexcoord(new MDLTexcoord { U = TU0, V = TV0 });
-        short TI1 = context.AddUniqueTexcoord(new MDLTexcoord { U = TU1, V = TV1 });
-        short TI2 = context.AddUniqueTexcoord(new MDLTexcoord { U = TU2, V = TV2 });
+        ushort ci0 = context.AddUniqueColour(new MDLColour { R = 255, G = 255, B = 255, A = 255 });
+        ushort ti0 = context.AddUniqueTexcoord(new MDLTexcoord { U = gt3.u0, V = gt3.v0 });
+        ushort ti1 = context.AddUniqueTexcoord(new MDLTexcoord { U = gt3.u1, V = gt3.v1 });
+        ushort ti2 = context.AddUniqueTexcoord(new MDLTexcoord { U = gt3.u2, V = gt3.v2 });
 
         context.AddTriangles(
-            new MDLTriangle { VI0 = VI0, VI1 = VI1, VI2 = VI2, NI0 = NI0, NI1 = NI1, NI2 = NI2, CI0 = CI0, CI1 = CI0, CI2 = CI0, TI0 = TI0, TI1 = TI1, TI2 = TI2 }
-            );
-        
+            new MDLTriangle {
+                vertexIndices   = ((ulong)gt3.vertex2 << 32) | ((ulong)gt3.vertex1 << 16) | ((ulong)gt3.vertex0 << 00),
+                normalIndices   = ((ulong)gt3.normal2 << 32) | ((ulong)gt3.normal1 << 16) | ((ulong)gt3.normal0 << 00),
+                colourIndices   = ((ulong)ci0 << 32) | ((ulong)ci0 << 16) | ((ulong)ci0 << 00),
+                texcoordIndices = ((ulong)ti2 << 32) | ((ulong)ti1 << 16) | ((ulong)ti0 << 00),
+                textureData     = gt3.tsb
+            }
+        );
     }
 
     static void ReadPrimitiveFT40(FileInputStream fis, MDLObjectContext context)
     {
         // PSX Equivalent = FT4 (0x2c 0x00 0x07 0x09)   !! USES INDEXED UVS !!
+        MDLPrimitiveFT40 ft4 = fis.ReadStruct<MDLPrimitiveFT40>();
+        MDLBlockUVS uvData   = context.UVBlocks[0][ft4.uvIndex];
 
-        ushort uvIndex = fis.ReadU16();
-        byte unkx02    = fis.ReadU8();
-        byte mode      = fis.ReadU8();
-
-        short NI0 = fis.ReadS16();
-        short VI0 = fis.ReadS16();
-        short VI1 = fis.ReadS16();
-        short VI2 = fis.ReadS16();
-        short VI3 = fis.ReadS16();
-        short PAD = fis.ReadS16();
-
-        short CI0 = context.AddUniqueColour(new MDLColour { R = 255, G = 255, B = 255, A = (byte)((mode & 0x02) > 0 ? 255 : 127) });
-
-        // Look up texcoord data
-        MDLBlockUVS uvData = context.UVBlocks[0][uvIndex];
-
-        short TI0 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u0, V = uvData.v0 });
-        short TI1 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u1, V = uvData.v1 });
-        short TI2 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u2, V = uvData.v2 });
-        short TI3 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u3, V = uvData.v3 });
+        ushort ci0 = context.AddUniqueColour(new MDLColour { R = 255, G = 255, B = 255, A = 255 });
+        ushort ti0 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u0, V = uvData.v0 });
+        ushort ti1 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u1, V = uvData.v1 });
+        ushort ti2 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u2, V = uvData.v2 });
+        ushort ti3 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u3, V = uvData.v3 });
 
         context.AddTriangles(
-            new MDLTriangle { VI0 = VI0, VI1 = VI1, VI2 = VI2, NI0 = NI0, NI1 = NI0, NI2 = NI0, CI0 = CI0, CI1 = CI0, CI2 = CI0, TI0 = TI0, TI1 = TI1, TI2 = TI2 },
-            new MDLTriangle { VI0 = VI3, VI1 = VI2, VI2 = VI1, NI0 = NI0, NI1 = NI0, NI2 = NI0, CI0 = CI0, CI1 = CI0, CI2 = CI0, TI0 = TI3, TI1 = TI2, TI2 = TI1 }
-            );
+            new MDLTriangle {
+                vertexIndices   = ((ulong)ft4.vertex2 << 32) | ((ulong)ft4.vertex1 << 16) | ((ulong)ft4.vertex0 << 00),
+                normalIndices   = ((ulong)ft4.normal0 << 32) | ((ulong)ft4.normal0 << 16) | ((ulong)ft4.normal0 << 00),
+                colourIndices   = ((ulong)ci0 << 32) | ((ulong)ci0 << 16) | ((ulong)ci0 << 00),
+                texcoordIndices = ((ulong)ti2 << 32) | ((ulong)ti1 << 16) | ((ulong)ti0 << 00),
+                textureData     = uvData.tsb
+            },
+            new MDLTriangle {
+                vertexIndices   = ((ulong)ft4.vertex1 << 32) | ((ulong)ft4.vertex2 << 16) | ((ulong)ft4.vertex3 << 00),
+                normalIndices   = ((ulong)ft4.normal0 << 32) | ((ulong)ft4.normal0 << 16) | ((ulong)ft4.normal0 << 00),
+                colourIndices   = ((ulong)ci0 << 32) | ((ulong)ci0 << 16) | ((ulong)ci0 << 00),
+                texcoordIndices = ((ulong)ti1 << 32) | ((ulong)ti2 << 16) | ((ulong)ti3 << 00),
+                textureData     = uvData.tsb
+            }
+        );
     }
 
     static void ReadPrimitiveGT40(FileInputStream fis, MDLObjectContext context)
     {
+        Logger.Critical("Update GT40");
+
         // PSX Equivalent = GT4 (0x3c 0x00 0x08 0x0c)   !! USES INDEXED UVS !!
-        ushort uvIndex = fis.ReadU16();
-        byte unkx02    = fis.ReadU8();
-        byte mode      = fis.ReadU8();
+        MDLPrimitiveGT40 gt4 = fis.ReadStruct<MDLPrimitiveGT40>();
+        MDLBlockUVS uvData  = context.UVBlocks[0][gt4.uvIndex];
 
-        short NI0 = fis.ReadS16();
-        short VI0 = fis.ReadS16();
-        short NI1 = fis.ReadS16();
-        short VI1 = fis.ReadS16();
-        short NI2 = fis.ReadS16();
-        short VI2 = fis.ReadS16();
-        short NI3 = fis.ReadS16();
-        short VI3 = fis.ReadS16();
-
-        short CI0 = context.AddUniqueColour(new MDLColour { R = 255, G = 255, B = 255, A = (byte)((mode & 0x02) > 0 ? 255 : 127) });
-
-        // Look up texcoord data
-        MDLBlockUVS uvData = context.UVBlocks[0][uvIndex];
-
-        short TI0 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u0, V = uvData.v0 });
-        short TI1 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u1, V = uvData.v1 });
-        short TI2 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u2, V = uvData.v2 });
-        short TI3 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u3, V = uvData.v3 });
+        ushort ci0 = context.AddUniqueColour(new MDLColour { R = 255, G = 255, B = 255, A = 255 });
+        ushort ti0 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u0, V = uvData.v0 });
+        ushort ti1 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u1, V = uvData.v1 });
+        ushort ti2 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u2, V = uvData.v2 });
+        ushort ti3 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u3, V = uvData.v3 });
 
         context.AddTriangles(
-            new MDLTriangle { VI0 = VI0, VI1 = VI1, VI2 = VI2, NI0 = NI0, NI1 = NI1, NI2 = NI2, CI0 = CI0, CI1 = CI0, CI2 = CI0, TI0 = TI0, TI1 = TI1, TI2 = TI2 },
-            new MDLTriangle { VI0 = VI3, VI1 = VI2, VI2 = VI1, NI0 = NI3, NI1 = NI2, NI2 = NI1, CI0 = CI0, CI1 = CI0, CI2 = CI0, TI0 = TI3, TI1 = TI2, TI2 = TI1 }
-            );
+            new MDLTriangle
+            {
+                vertexIndices   = (ulong)((gt4.vertex2 << 32) | (gt4.vertex1 << 16) | (gt4.vertex0 << 00)),
+                normalIndices   = (ulong)((gt4.normal2 << 32) | (gt4.normal1 << 16) | (gt4.normal0 << 00)),
+                colourIndices   = (ulong)((ci0 << 32) | (ci0 << 16) | (ci0 << 00)),
+                texcoordIndices = (ulong)((ti2 << 32) | (ti1 << 16) | (ti0 << 00)),
+                textureData     = uvData.tsb
+            },
+            new MDLTriangle
+            {
+                vertexIndices   = (ulong)((gt4.vertex1 << 32) | (gt4.vertex2 << 16) | (gt4.vertex3 << 00)),
+                normalIndices   = (ulong)((gt4.normal1 << 32) | (gt4.normal2 << 16) | (gt4.normal3 << 00)),
+                colourIndices   = (ulong)((ci0 << 32) | (ci0 << 16) | (ci0 << 00)),
+                texcoordIndices = (ulong)((ti1 << 32) | (ti2 << 16) | (ti3 << 00)),
+                textureData     = uvData.tsb
+            }
+        );
     }
 
     static void ReadPrimitiveFT31(FileInputStream fis, MDLObjectContext context)
     {
         // PSX Equivalent = FT3 Unlit (0x25 0x01 0x06 0x07)
+        MDLPrimitiveFT31 ft3 = fis.ReadStruct<MDLPrimitiveFT31>();
 
-        byte TU0 = fis.ReadU8();
-        byte TV0 = fis.ReadU8();
-        ushort CBA = fis.ReadU16();
-
-        byte TU1 = fis.ReadU8();
-        byte TV1 = fis.ReadU8();
-        ushort TSB = fis.ReadU16();
-
-        byte TU2 = fis.ReadU8();
-        byte TV2 = fis.ReadU8();
-        ushort UNK = fis.ReadU16();
-
-        byte CR0 = fis.ReadU8();
-        byte CG0 = fis.ReadU8();
-        byte CB0 = fis.ReadU8();
-        byte mode = fis.ReadU8();
-
-        short VI0 = fis.ReadS16();
-        short VI1 = fis.ReadS16();
-        short VI2 = fis.ReadS16();
-        short pad = fis.ReadS16();
-
-        short CI0 = context.AddUniqueColour(new MDLColour { R = CR0, G = CG0, B = CB0, A = (byte)((mode & 0x02) > 0 ? 255 : 127) });
-        short NI0 = context.AddUniqueNormal(new MDLSVector { VX = 0, VY = -4096, VZ = 0 });
-
-        short TI0 = context.AddUniqueTexcoord(new MDLTexcoord { U = TU0, V = TV0 });
-        short TI1 = context.AddUniqueTexcoord(new MDLTexcoord { U = TU1, V = TV1 });
-        short TI2 = context.AddUniqueTexcoord(new MDLTexcoord { U = TU2, V = TV2 });
+        ushort ci0 = context.AddUniqueColour(new MDLColour { R = ft3.red, G = ft3.green, B = ft3.blue, A = 255 });
+        ushort ni0 = context.AddUniqueNormal(GenerateNormal(context, ft3.vertex0, ft3.vertex1, ft3.vertex2));
+        ushort ti0 = context.AddUniqueTexcoord(new MDLTexcoord { U = ft3.u0, V = ft3.v0 });
+        ushort ti1 = context.AddUniqueTexcoord(new MDLTexcoord { U = ft3.u1, V = ft3.v1 });
+        ushort ti2 = context.AddUniqueTexcoord(new MDLTexcoord { U = ft3.u2, V = ft3.v2 });
 
         context.AddTriangles(
-            new MDLTriangle { VI0 = VI0, VI1 = VI1, VI2 = VI2, NI0 = NI0, NI1 = NI0, NI2 = NI0, CI0 = CI0, CI1 = CI0, CI2 = CI0, TI0 = TI0, TI1 = TI1, TI2 = TI2 }
-            );
+            new MDLTriangle
+            {
+                vertexIndices   = ((ulong)ft3.vertex2 << 32) | ((ulong)ft3.vertex1 << 16) | ((ulong)ft3.vertex0 << 00),
+                normalIndices   = ((ulong)ni0 << 32) | ((ulong)ni0 << 16) | ((ulong)ni0 << 00),
+                colourIndices   = ((ulong)ci0 << 32) | ((ulong)ci0 << 16) | ((ulong)ci0 << 00),
+                texcoordIndices = ((ulong)ti2 << 32) | ((ulong)ti1 << 16) | ((ulong)ti0 << 00),
+                textureData     = ft3.tsb
+            }
+        );
     }
 
     static void ReadPrimitiveFT41(FileInputStream fis, MDLObjectContext context)
     {
+        Logger.Critical("Update FT41");
+
         // PSX Equivalent = FT4 Unlit (0x2d 0x01 0x07 0x09)   !! USES INDEXED UVS !!
+        MDLPrimitiveFT41 ft4 = fis.ReadStruct<MDLPrimitiveFT41>();
+        MDLBlockUVS uvData   = context.UVBlocks[0][ft4.uvIndex];
 
-        ushort uvIndex = fis.ReadU16();
-        byte unkx02    = fis.ReadU8();
-        byte unkx03    = fis.ReadU8();
-
-        byte CR0  = fis.ReadU8();
-        byte CG0  = fis.ReadU8();
-        byte CB0  = fis.ReadU8();
-        byte mode = fis.ReadU8();
-
-        short VI0 = fis.ReadS16();
-        short VI1 = fis.ReadS16();
-        short VI2 = fis.ReadS16();
-        short VI3 = fis.ReadS16();
-
-        short CI0 = context.AddUniqueColour(new MDLColour { R = CR0, G = CG0, B = CB0, A = (byte)((mode & 0x02) > 0 ? 255 : 127) });
-        short NI0 = context.AddUniqueNormal(new MDLSVector { VX = 0, VY = -4096, VZ = 0 });
-
-        // Look up texcoord data
-        MDLBlockUVS uvData = context.UVBlocks[0][uvIndex];
-
-        short TI0 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u0, V = uvData.v0 });
-        short TI1 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u1, V = uvData.v1 });
-        short TI2 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u2, V = uvData.v2 });
-        short TI3 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u3, V = uvData.v3 });
+        ushort ci0 = context.AddUniqueColour(new MDLColour { R = ft4.red, G = ft4.green, B = ft4.blue, A = 255 });
+        ushort ni0 = context.AddUniqueNormal(GenerateNormal(context, ft4.vertex0, ft4.vertex1, ft4.vertex2));
+        ushort ni1 = context.AddUniqueNormal(GenerateNormal(context, ft4.vertex3, ft4.vertex2, ft4.vertex1));
+        ushort ti0 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u0, V = uvData.v0 });
+        ushort ti1 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u1, V = uvData.v1 });
+        ushort ti2 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u2, V = uvData.v2 });
+        ushort ti3 = context.AddUniqueTexcoord(new MDLTexcoord { U = uvData.u3, V = uvData.v3 });
 
         context.AddTriangles(
-            new MDLTriangle { VI0 = VI0, VI1 = VI1, VI2 = VI2, NI0 = NI0, NI1 = NI0, NI2 = NI0, CI0 = CI0, CI1 = CI0, CI2 = CI0, TI0 = TI0, TI1 = TI1, TI2 = TI2 },
-            new MDLTriangle { VI0 = VI3, VI1 = VI2, VI2 = VI1, NI0 = NI0, NI1 = NI0, NI2 = NI0, CI0 = CI0, CI1 = CI0, CI2 = CI0, TI0 = TI3, TI1 = TI2, TI2 = TI1 }
-            );
+            new MDLTriangle
+            {
+                vertexIndices   = ((ulong)ft4.vertex2 << 32) | ((ulong)ft4.vertex1 << 16) | ((ulong)ft4.vertex0 << 00),
+                normalIndices   = ((ulong)ni0 << 32) | ((ulong)ni0 << 16) | ((ulong)ni0 << 00),
+                colourIndices   = ((ulong)ci0 << 32) | ((ulong)ci0 << 16) | ((ulong)ci0 << 00),
+                texcoordIndices = ((ulong)ti2 << 32) | ((ulong)ti1 << 16) | ((ulong)ti0 << 00),
+                textureData     = uvData.tsb
+            },
+            new MDLTriangle
+            {
+                vertexIndices   = ((ulong)ft4.vertex1 << 32) | ((ulong)ft4.vertex2 << 16) | ((ulong)ft4.vertex3 << 00),
+                normalIndices   = ((ulong)ni1 << 32) | ((ulong)ni1 << 16) | ((ulong)ni1 << 00),
+                colourIndices   = ((ulong)ci0 << 32) | ((ulong)ci0 << 16) | ((ulong)ci0 << 00),
+                texcoordIndices = ((ulong)ti1 << 32) | ((ulong)ti2 << 16) | ((ulong)ti3 << 00),
+                textureData     = uvData.tsb
+            }
+        );
     }
 
     static void ReadPrimitiveStub(FileInputStream fis, MDLObjectContext context)
     {
         throw new NotImplementedException();
     }
+
+    static MDLVector GenerateNormal(MDLObjectContext context, ushort I0, ushort I1, ushort I2)
+    {
+        // Get basic vertices...
+        MDLVector V0 = context.Vertices[I0];
+        MDLVector V1 = context.Vertices[I1];
+        MDLVector V2 = context.Vertices[I2];
+
+        // Get edges
+        Vector3 E1 = new Vector3((V1.VX - V0.VX), -(V1.VY - V0.VY), (V1.VZ - V0.VZ));
+        Vector3 E2 = new Vector3((V2.VX - V0.VX), -(V2.VY - V0.VY), (V2.VZ - V0.VZ));
+
+        // Now create the normal...
+        Vector3 N = Vector3.Cross(E1, E2).normalized;
+
+        // Convert to fixed point and return
+        return new MDLVector { VX = (short)(4096F * N.x), VY = (short)(4096F * -N.y), VZ = (short)(4096F * N.z) };
+    }
     #endregion
 
     #region Data Definition
-
-    [Flags]
-    public enum MDLContentType : byte
-    {
-        SkinnedAnimation = (1 << 0),        // Skinned Animations are contained
-        UVDataBlock      = (1 << 1),        // UV Block is contained
-        VertexAnimation  = (1 << 2),        // Vertex Animations are contained
-        X2MDL            = (1 << 3)         // Special flag added by Michael's X2MDL to signify that the model was created using it?
-    }
-
-    /// <summary>
-    /// MDL Header Type
-    /// </summary>
-    [StructLayout(LayoutKind.Explicit, Pack=1)]
-    struct MDLHeader
-    {
-        [FieldOffset(0x00)] public MDLContentType flags;
-        [FieldOffset(0x01)] public byte numSkeletalAnim;
-        [FieldOffset(0x02)] public byte numVertexAnim;
-        [FieldOffset(0x03)] public byte numInternalTexture;
-        [FieldOffset(0x04)] public byte numTmdObject;
-        [FieldOffset(0x05)] public byte numUVBlocks;
-        [FieldOffset(0x06)] public ushort meshDataSize;
-        [FieldOffset(0x08)] public ushort padx08;
-        [FieldOffset(0x0A)] public ushort padx0A;
-        [FieldOffset(0x0C)] public ushort skeletonAnimDataSize;
-        [FieldOffset(0x0E)] public ushort vertexAnimDataSize;
-    }
-
-    /// <summary>
-    /// MDL Object Type (Actually TMD Object)
-    /// </summary>
-    [StructLayout(LayoutKind.Explicit, Pack = 1)]
-    struct MDLObject
-    {
-        [FieldOffset(0x00)] public uint vertexBase;
-        [FieldOffset(0x04)] public int vertexNum;       // Actually unsigned, but it doesn't matter and fuck csharp
-        [FieldOffset(0x08)] public uint normalBase;
-        [FieldOffset(0x0C)] public int normalNum;
-        [FieldOffset(0x10)] public uint primitiveBase;
-        [FieldOffset(0x14)] public int primitiveNum;
-        [FieldOffset(0x18)] public int scale;
-    }
-
-    /// <summary>
-    /// MDL UV Item
-    /// </summary>
-    [StructLayout(LayoutKind.Explicit, Pack = 1)]
-    struct MDLBlockUVS
-    {
-        [FieldOffset(0x00)] public byte u0;
-        [FieldOffset(0x01)] public byte v0;
-        [FieldOffset(0x02)] public ushort psxCBA;   // "Clut Buffer Address" Unsure if this is used.
-        [FieldOffset(0x04)] public byte u1;
-        [FieldOffset(0x05)] public byte v1;
-        [FieldOffset(0x06)] public ushort psxTSB;
-        [FieldOffset(0x08)] public byte u2;
-        [FieldOffset(0x09)] public byte v2;
-        [FieldOffset(0x0A)] public byte u3;
-        [FieldOffset(0x0B)] public byte v3;
-    }
-
-    /// <summary>
-    /// MDL SVECTOR (short). Actually PSX SVECTOR type.
-    /// </summary>
-    [StructLayout(LayoutKind.Explicit, Pack = 1)]
-    struct MDLSVector
-    {
-        [FieldOffset(0x00)] public short VX;
-        [FieldOffset(0x02)] public short VY;
-        [FieldOffset(0x04)] public short VZ;
-        [FieldOffset(0x06)] public short VW;        // PSX considers this padding - but fuck sony
-    }
-
-    /// <summary>
-    /// MDL Primitive List Tag.
-    /// </summary>
-    [StructLayout(LayoutKind.Explicit, Pack = 1)]
-    struct MDLBlockPrimitiveTag
-    {
-        [FieldOffset(0x00)] public short type;
-        [FieldOffset(0X02)] public short count;
-    }
-
     /**
      * Below structs are helpers and not actually contained.
     **/
@@ -629,38 +657,30 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
     [StructLayout(LayoutKind.Explicit, Pack = 1)]
     struct MDLTriangle
     {
-        [FieldOffset(0x00)] public short VI0;
-        [FieldOffset(0x02)] public short NI0;
-        [FieldOffset(0x04)] public short CI0;
-        [FieldOffset(0x06)] public short TI0;
-        [FieldOffset(0x08)] public short VI1;
-        [FieldOffset(0x0A)] public short NI1;
-        [FieldOffset(0x0C)] public short CI1;
-        [FieldOffset(0x0E)] public short TI1;
-        [FieldOffset(0x10)] public short VI2;
-        [FieldOffset(0x12)] public short NI2;
-        [FieldOffset(0x14)] public short CI2;
-        [FieldOffset(0x16)] public short TI2;
+        [FieldOffset(0x00)] public ulong vertexIndices;
+        [FieldOffset(0x08)] public ulong normalIndices;
+        [FieldOffset(0x10)] public ulong colourIndices;
+        [FieldOffset(0x18)] public ulong texcoordIndices;
+        [FieldOffset(0x20)] public ulong textureData;
     }
 
-
     /// <summary>
-    /// Class is used to ease loading MDL Data
+    /// Class is used to ease loading MDL data
     /// </summary>
     class MDLObjectContext
     {
-        public readonly List<MDLSVector>  Vertices;
-        public readonly List<MDLSVector>  Normals;
+        public readonly List<MDLVector>  Vertices;
+        public readonly List<MDLVector>  Normals;
         public readonly List<MDLColour>   Colours;
         public readonly List<MDLTexcoord> Texcoords;
         public readonly List<MDLTriangle> Triangles;
 
         public readonly List<MDLBlockUVS[]> UVBlocks;
 
-        public MDLObjectContext(MDLSVector[] vertices, MDLSVector[] normals, MDLBlockUVS[][] uvBlocks)
+        public MDLObjectContext(MDLVector[] vertices, MDLVector[] normals, MDLBlockUVS[][] uvBlocks)
         {
-            Vertices  = new List<MDLSVector>(vertices);
-            Normals   = new List<MDLSVector>(normals);
+            Vertices  = new List<MDLVector>(vertices);
+            Normals   = new List<MDLVector>(normals);
             Colours   = new List<MDLColour>();
             Texcoords = new List<MDLTexcoord>();
             Triangles = new List<MDLTriangle>();
@@ -668,42 +688,42 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
             UVBlocks = new List<MDLBlockUVS[]>(uvBlocks);
         }
 
-        public short AddUniqueNormal(MDLSVector normal)
+        public ushort AddUniqueNormal(MDLVector normal)
         {
             for (int i = 0; i < Normals.Count; ++i)
                 if (Normals[i].Equals(normal))
-                    return (short)i;
+                    return (ushort)i;
 
             Normals.Add(normal);
-            return (short)(Normals.Count - 1);
+            return (ushort)(Normals.Count - 1);
         }
 
         /// <summary>
         /// Adds a unique colour to the colour data list, if an identical one is not found.<br/>
         /// The index of the pre-existing duplicate is returned if it is matched.
         /// </summary>
-        public short AddUniqueColour(MDLColour colour)
+        public ushort AddUniqueColour(MDLColour colour)
         {
             for (int i = 0; i < Colours.Count; ++i)
                 if (Colours[i].Equals(colour))
-                    return (short)i;
+                    return (ushort)i;
 
             Colours.Add(colour);
-            return (short)(Colours.Count - 1);
+            return (ushort)(Colours.Count - 1);
         }
 
         /// <summary>
         /// Adds a unique texcoord to the texcoord data list, if an identical one is not found.<br/>
         /// The index of the pre-existing duplicate is returned if it is matched.
         /// </summary>
-        public short AddUniqueTexcoord(MDLTexcoord texcoord)
+        public ushort AddUniqueTexcoord(MDLTexcoord texcoord)
         {
             for (int i = 0; i < Texcoords.Count; ++i)
                 if (Texcoords[i].Equals(texcoord))
-                    return (short)i;
+                    return (ushort)i;
 
             Texcoords.Add(texcoord);
-            return (short)(Texcoords.Count - 1);
+            return (ushort)(Texcoords.Count - 1);
         }
 
         /// <summary>
@@ -711,6 +731,82 @@ public class MDLFormatHandler : FormatHandler<ModelResource>
         /// </summary>
         public void AddTriangles(params MDLTriangle[] triangles) =>
             Triangles.AddRange(triangles);
+    }
+    
+    /// <summary>
+    /// Class is used to ease loading TIM data
+    /// </summary>
+    class MDLTextureContext
+    {
+        public class ImageData
+        {
+            public TIMSurface clutSurface;
+            public TIMSurface dataSurface;
+            public bool hasClut;
+            public byte bpp;
+            public byte[] raw;
+            public string virtualName;
+        }
+
+        public List<ImageData> images = new List<ImageData>();
+
+        /// <summary>
+        /// Load tim data into the texture context.
+        /// </summary>
+        public void LoadImage(FileInputStream fis)
+        {
+            ImageData imageData = new ImageData();
+
+            int byteSize = 8;
+
+            // We want to return after actually reading TIM data...
+            fis.Jump(fis.Position);
+
+            TIMHeader header = fis.ReadStruct<TIMHeader>();
+
+            imageData.bpp     = (byte)(header.mode & 0x3);
+            imageData.hasClut = (header.mode & 0x8) != 0;
+
+            // Read clut...
+            if ((header.mode & 0x8) != 0)
+            {
+                imageData.clutSurface = new TIMSurface
+                {
+                    byteSize = fis.ReadU32(),
+                    loadX    = fis.ReadU16(),
+                    loadY    = fis.ReadU16(),
+                    loadW    = fis.ReadU16(),
+                    loadH    = fis.ReadU16()
+                };
+
+                imageData.clutSurface.data = fis.ReadU8Array((int)(imageData.clutSurface.byteSize - 0xC));
+
+                byteSize += (int)imageData.clutSurface.byteSize;
+            }
+
+            // Read data...
+            imageData.dataSurface = new TIMSurface
+            {
+                byteSize = fis.ReadU32(),
+                loadX    = fis.ReadU16(),
+                loadY    = fis.ReadU16(),
+                loadW    = fis.ReadU16(),
+                loadH    = fis.ReadU16()
+            };
+
+            imageData.dataSurface.data = fis.ReadU8Array((int)(imageData.dataSurface.byteSize - 0xC));
+
+            byteSize += (int)imageData.dataSurface.byteSize;
+
+            fis.Return();
+
+            // Now we've read the image parts individually, we will read the entire image as raw bytes.
+            imageData.virtualName = $"{Path.GetDirectoryName(fis.Source)}\\{Path.GetFileNameWithoutExtension(fis.Source)}_{imageData.dataSurface.loadX:D4}_{imageData.dataSurface.loadY:D4}.tim";
+            imageData.raw         = fis.ReadU8Array(byteSize);
+
+            // Store the image data...
+            images.Add(imageData);
+        }
     }
 
     #endregion
