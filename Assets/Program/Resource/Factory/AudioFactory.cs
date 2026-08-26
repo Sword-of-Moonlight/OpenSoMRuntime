@@ -21,7 +21,12 @@ public class AudioFactory : ResourceFactory<AudioResource>
 
         // Does this resource already exist in the cache? If so, return it without doing anything else.
         if (resourceCache.ContainsKey(name))
-            return name;
+        {
+            if (resourceCache[name].ResourceState != ResourceState.Unloaded)
+                return name;
+            else
+                resourceCache.Remove(name, out _);
+        }          
 
         // Lets create our absolute path now
         if (!File.Exists(path))
@@ -40,7 +45,7 @@ public class AudioFactory : ResourceFactory<AudioResource>
         // Create the new resource 
         AudioResource resource = new()
         {
-            ResourceState = ResourceState.Unloaded,
+            ResourceState  = ResourceState.Unloaded,
             ResourceOrigin = path,
             ReferenceCount = 0
         };

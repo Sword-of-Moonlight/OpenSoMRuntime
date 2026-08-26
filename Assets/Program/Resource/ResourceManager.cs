@@ -61,7 +61,18 @@ public static class ResourceManager
         foundPath = null;
         return false;
     }
-        
+
+    public static List<FileInfo> Enumerate(string searchPattern)
+    {
+        List<FileInfo> fileList = new List<FileInfo>();
+
+        for (int i = 0; i < ResourceRoots.Count; ++i)
+            fileList.AddRange(new DirectoryInfo(ResourceRoots[i]).EnumerateFiles(searchPattern, SearchOption.AllDirectories));
+
+        return fileList;
+    }
+
+
 
     /// <summary>
     /// Purges any dead assets from each of the factories
