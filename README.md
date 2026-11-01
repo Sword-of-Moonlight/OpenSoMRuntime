@@ -1,4 +1,6 @@
-![image](Tools/OpenSoMRuntimeLogo.png)\
+# Open SoM Runtime
+![image](Tools/OpenSoMRuntimeLogo.png)
+
 Open SoM Runtime aims to create a full replacement of the original Sword of Moonlight Runtime, 
 to resolve long standing issues and provide a more adaptable solution for creating SoM games, 
 and enhancing the process.  This is done as "soft" reverse engineering, where the project
@@ -6,8 +8,9 @@ code is not reverse engineered, but actual reverse engineering is used to ensure
 game systems.
 
 The project is currency in it's infancy, and seeking contributors!  Although, even at this stage - games are loading up,
-events are (partially) being parsed, menus are displayed and maps can be explored!
+events are (partially) being parsed, menus are displayed and maps can be explored!  All visible games in the header image of this read me are rendered in Open SoM Runtime!
 
+You can discuss the project on the ![Sword of Moonlight Discord Server](https://discord.gg/66CQdB738d).
 
 ## Goals
 The initial goal is to have a fit for purpose replacement of the runtime in full.  It should:
